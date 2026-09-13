@@ -113,6 +113,12 @@ if ($LASTEXITCODE -ne 0) {
     throw "DKC2 widescreen override application failed with exit code $LASTEXITCODE."
 }
 
+$CoopOverrides = Join-Path $Repository "scripts\apply_dkc2_coop_overrides.py"
+& $Python $CoopOverrides --generated-dir $OutputDirectory
+if ($LASTEXITCODE -ne 0) {
+    throw "DKC2 co-op override application failed with exit code $LASTEXITCODE."
+}
+
 # The emitter may replace its output directory atomically. On Windows, a
 # directory created by a restricted build account can retain a protected ACL
 # after that move, preventing the interactive owner from reading ignored build

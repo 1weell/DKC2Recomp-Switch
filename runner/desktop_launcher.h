@@ -1,6 +1,7 @@
 #ifndef DKC2_DESKTOP_LAUNCHER_H
 #define DKC2_DESKTOP_LAUNCHER_H
 
+#include "desktop_crt.h"
 #include "recomp_launcher.h"
 
 #include <stdbool.h>
@@ -15,8 +16,14 @@ extern "C" {
 /* Persisted widescreen edge policy (a Dkc2VideoEdgePolicy value). */
 int Dkc2LauncherWidescreenEdge(void);
 void Dkc2LauncherSetWidescreenEdge(int policy);
+/* 2 PLAYER TEAM input policy (a Dkc2CoopMode value): simultaneous co-op
+ * or the cartridge's classic alternating control. */
+int Dkc2LauncherCoopMode(void);
+void Dkc2LauncherSetCoopMode(int mode);
 /* Upscaler choice (kDkc2Upscaler*), remembered with the launcher settings;
  * the Reconstruct experiment's mode (0..3) and strength (0..100). */
+int Dkc2LauncherHaptics(void);
+void Dkc2LauncherSetHaptics(int enabled);
 int Dkc2LauncherUpscaler(void);
 void Dkc2LauncherSetUpscaler(int upscaler);
 int Dkc2LauncherReconstructMode(void);
@@ -27,6 +34,13 @@ int Dkc2LauncherReconstructSoftness(void);
 void Dkc2LauncherSetReconstructSoftness(int percent);
 int Dkc2LauncherReconstructShading(void);
 void Dkc2LauncherSetReconstructShading(int percent);
+/* Display choice (kDkc2Display*) and the CRT television settings it
+ * draws with, remembered with the launcher settings. */
+int Dkc2LauncherDisplay(void);
+void Dkc2LauncherSetDisplay(int display);
+bool Dkc2LauncherApplyCrtEnvironment(char *error, size_t capacity);
+const Dkc2CrtSettings *Dkc2LauncherCrt(void);
+void Dkc2LauncherSetCrt(const Dkc2CrtSettings *crt);
 
 void Dkc2LauncherSettingsDefault(RecompLauncherCSettings *settings);
 void Dkc2LauncherSettingsLoad(RecompLauncherCSettings *settings);

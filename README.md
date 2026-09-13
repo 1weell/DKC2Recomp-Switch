@@ -37,6 +37,47 @@ The selected external path is remembered in `rom.cfg` beside the executable.
 The ROM is never copied into the release. Saves are written to
 `saves/save.srm`, with the previous clean save retained as `save.srm.bak`.
 
+### Windows menus and controls
+
+Both Windows hosts include a dark **Game / View / Input** dropdown bar.
+Use Game for pause/resume and Quick Save/Load, View for aspect, scaling,
+level edges, screen filters and fullscreen, and Input to choose each player's
+Keyboard/Gamepad source or TEAM co-op policy. Changes apply while playing
+and persist in `launcher.cfg`. **Alt+Enter** toggles fullscreen; **Escape**
+leaves fullscreen when the overlay is closed, otherwise pauses/resumes.
+The bar returns on leaving fullscreen.
+
+Default keyboard: arrows move; **Z** jumps (SNES B), **A** runs/rolls (Y),
+**X** is A, **S** is X, **Q/W** are L/R, **Enter** is Start and **right Shift**
+is Select. Player 1 defaults to keyboard, Player 2 to the first connected
+gamepad; select Gamepad for both players to assign two connected pads in order.
+**Start+Back** opens/closes the pause overlay without sending the chord to the game.
+Bindings and deadzones are editable in the launcher or in-game overlay.
+GDI supports both the native menus and the full ImGui pause/settings overlay;
+Reconstruct is available in SDL and native Windows OpenGL. GDI exposes its
+supported Nearest/Bilinear samplers. The menus reflect compiled shader capability.
+
+### CRT television, characters and MSU-1 music
+
+Open **Escape > Settings > Display > CRT television**. Choose Living room,
+Studio monitor, Soft or Custom; adjust Scanlines, Sharpness, Phosphor mask,
+Mask strength, Glow, Halation and Curvature. Phosphor colors are separate.
+Native Windows OpenGL and SDL use identical CRT passes. Tube mode supplies
+its own scaling; Flat panel retains Reconstruct. GDI uses flat display.
+
+The **Characters** tab offers Original, Donkey Kong and Kiddy Kong for each
+slot, **Donkey + Kiddy**, and **Original pair**. Load an external character pack
+as described in [Project Kongs](docs/PROJECT_KONGS.md). Choices and pack paths
+persist in `kongs.cfg`. Original slot collision sizes and some movement rules
+remain; this is not a full DKC1/DKC3 move-set transplant.
+
+Under **Settings > Audio**, choose an extracted **MSU-1 music folder**, enable
+**Replacement music (MSU-1)** and adjust **Music volume**. Standard
+`dkc2_msu1-N.pcm` tracks replace music while original sound effects remain.
+Missing tracks fall back to SNES music. The external folder preference is saved
+in `msu1.cfg`. No patched ROM or `.msu` marker is needed. See
+[MSU-1 audio](docs/MSU1_AUDIO.md) for state/rewind behavior and validation.
+
 ### Native macOS release
 
 1. Download `DKC2Recomp-v0.0.5-macOS-arm64.zip` from
@@ -162,6 +203,41 @@ GameController. Players set to Gamepad receive connected devices in player
 order, so two gamepads drive the two SNES controller ports independently.
 Source, deadzone, and binding choices persist in `launcher.cfg`.
 
+### Two-player co-op
+
+Selecting "2 PLAYER TEAM" in the game's own menu used to alternate control:
+one Kong was player-controlled while the other followed by AI, and control
+passed only when a Kong was hit or swapped. The port now makes TEAM mode
+simultaneous by default: controller 1 always drives the first Kong slot and
+controller 2 always drives the second, so both players play at the same time,
+each with their own Kong. The second Kong stands by (and auto-catches-up when
+separated) until player 2 first touches their controller, then stays fully
+playable, including after landing. Both players use normal bright colors and
+can attack enemies; Player 2's roll, stomp and bounce are covered by a private
+first-level replay, along with contact damage and a Player 1 attack regression.
+Roll/stomp recovery restores walking and jumping. Held barrels follow and
+launch from their owner, including throws across different platform heights.
+A hurt Kong completes its departure and waits for a DK barrel; pressing its
+controls or loading a save cannot revive it. The survivor continues without
+the original TEAM turn-taking prompt. A DK barrel restores independent control.
+Private checks cover both Kong roles after a leader swap and save/load across
+loss, revival and a second loss.
+Either player can mount Rambi; the rider becomes the camera leader and keeps
+their own controller. The other Kong retains on-foot movement. Private checks
+cover riding, jumping, dismount/remount, passing Rambi from P1 to P2 and loading
+while mounted. Death handoff keeps the survivor in place and resumes enemies.
+Both players can collect banana trails while the other rides Rambi; overlapping
+hitboxes and revisiting collected bananas after save/load award each only once.
+Both Kongs can move into the visible side areas in 16:10 and 16:9, with the
+level walls retained. The camera still follows the active Kong; this is
+shared-camera local co-op.
+Full-game death/respawn, other animal types and special throwables remain unverified.
+The "2P Team mode" choice in the overlay's Settings
+page (or
+`CoopMode` in `launcher.cfg`, or `DKC2_COOP=simultaneous|classic`) restores
+the classic alternating behavior; 1 PLAYER and "2 PLAYER CONTEST" are never
+affected.
+
 ## In-game overlay and Assist Tools
 
 Press **Escape** during gameplay to pause on a completed frame boundary and
@@ -197,10 +273,10 @@ Cheats**. This setting defaults off, persists as `AssistTools` in
 native Mac app, the Game menu's fixed **Quick Save State** and **Quick Load
 State** commands always operate Slot 1, even when Assist Tools are disabled.
 
-The overlay is available in the Windows OpenGL presenter and the SDL/OpenGL
-host. The atomic GDI compatibility fallback remains a game-only emergency
-path: Escape quits there, but Assist shortcuts follow the setting chosen in
-the pre-boot launcher.
+The overlay is available in the Windows OpenGL and GDI presenters and the
+SDL/OpenGL host. GDI draws ImGui through an SDL software renderer into the
+completed game buffer before presentation, so Escape and Game > Settings /
+Controls work with the compatibility renderer too.
 
 The pre-boot launcher now also has top-level **Assist Tools** and **Credits**
 sections beside Settings. Credits text is supplied by this project rather than
@@ -384,15 +460,19 @@ frame is scaled. Settings persist in `launcher.cfg`; Raw remains the default
 unless the user opts in. For repeatable diagnostics, `DKC2_SCREEN=raw`, `crt`,
 `composite`, or `trinitron` overrides the saved screen model for one process.
 
-The pause menu's Settings page also offers an experimental **Reconstruct**
-upscaler for high-density displays. It keeps pixel edges sharp at any
+Both desktop hosts offer experimental **Reconstruct** scaling. In the regular
+`DKC2Recomp.exe`, select OpenGL and restart if currently using GDI; all five
+reconstruction levels and the edge strength, softness, and smooth shading
+sliders then apply live. `DKC2RecompSDL.exe` supports the same shader. The
+shader source is shared, and all four screen-color presets compose with it.
+The shader keeps pixel edges sharp at any
 fractional scale, decodes the checkerboard and line dithers SNES artists
 used for mid-tones, and rebuilds diagonal edges of the pre-rendered art
 with an xBR-style corner test evaluated per output pixel, then softens
 the result: wider transition bands and gradient shading where neighboring
 colors are close. Its mode combo adds the stages one at a time and sliders
 scale the edge blend, the softness, and the shading;
-`DKC2_UPSCALER=nearest|bilinear|reconstruct` overrides the saved choice.
+`DKC2_UPSCALER=nearest|bilinear|reconstruct` overrides the saved choice in SDL.
 
 Visible OpenGL gameplay windows request a one-buffer swap interval to reduce
 tearing. The accepted status is written with the presentation backend in
@@ -686,3 +766,11 @@ an MIT/Apache-2.0 color-science lineage; the complete notices are in
 license. Nintendo and Rare
 own their respective game content and trademarks; no license in this
 repository grants rights to that content.
+
+
+Display and controller parity with DKC3 is recorded in
+[DKC3_FEATURE_PARITY.md](docs/DKC3_FEATURE_PARITY.md). Both hosts now expose
+21:9 (446x224) alongside 4:3, 16:10, and 16:9. Stomp rumble and separate P1/P2
+test pulses are in Escape > Settings, with controller routing matching input
+assignment (keyboard P1 plus gamepad P2 uses that gamepad for P2 feedback).
+Physical rumble sensation and full-game ultrawide coverage require further play.

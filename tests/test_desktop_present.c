@@ -13,6 +13,18 @@
 
 static int failures;
 
+static bool DrawTestOverlay(void *user, uint8_t *pixels, int width, int height) {
+  int *calls = (int *)user;
+  ++*calls;
+  if (width != 12 || height != 6) return false;
+  /* Confirm that CPU drawing sees the completed GDI game frame. */
+  if (pixels[(2 * width + 2) * 4 + 2] != 255) return false;
+  pixels[0] = 42;
+  pixels[1] = 87;
+  pixels[2] = 123;
+  return true;
+}
+
 typedef struct TestSwapInterval {
   int calls;
   int interval;
@@ -209,6 +221,18 @@ int main(void) {
     fprintf(stderr, "FAIL: GDI linear-filter presentation failed\n");
     failures++;
   }
+
+  int overlay_calls = 0;
+  presenter.overlay_draw = DrawTestOverlay;
+  presenter.overlay_user = &overlay_calls;
+  if (!Dkc2DesktopPresent(&presenter, target, &wide_client, red_source,
+                          &source_info, 2, 2, false) || overlay_calls != 1) {
+    fprintf(stderr, "FAIL: GDI and software overlay composition\n");
+    failures++;
+  }
+  GdiFlush();
+  CheckPixel(target_pixels, 12 * 4, 0, 0, 42, 87, 123,
+             "software overlay is part of presented frame");
 
   Dkc2DesktopPresenterDestroy(&presenter);
   SelectObject(target, original);

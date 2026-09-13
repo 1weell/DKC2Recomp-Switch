@@ -14,6 +14,8 @@ enum {
   kDkc2OverlayActionQuit = 1u << 1,
   kDkc2OverlayActionSaveState = 1u << 2,
   kDkc2OverlayActionLoadState = 1u << 3,
+  kDkc2OverlayActionTestHapticsP1 = 1u << 4,
+  kDkc2OverlayActionTestHapticsP2 = 1u << 5,
 };
 
 typedef enum Dkc2OverlayBindingCapture {
@@ -62,6 +64,13 @@ bool Dkc2DesktopOverlayModelArmPadCapture(
  * Once windowed, or while the menu is already open, Escape retains its
  * normal overlay/capture behavior. */
 bool Dkc2DesktopEscapeExitsFullscreen(bool fullscreen, bool overlay_open);
+
+/* Display the sampler the host can apply without changing a remembered
+ * Reconstruct preference shared with another host. Values are nearest=0,
+ * bilinear=1 and Reconstruct=2. */
+int Dkc2DesktopOverlayEffectiveUpscaler(bool reconstruct_available,
+                                       int saved_upscaler,
+                                       bool linear_filter);
 
 #ifdef __cplusplus
 }

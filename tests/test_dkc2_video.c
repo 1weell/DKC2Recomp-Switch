@@ -362,6 +362,15 @@ int main(void) {
     }
   }
 
+  Dkc2VideoSetAspect(kDkc2VideoAspect21x9);
+  Dkc2VideoAspect ultra;
+  if (Dkc2VideoWidth() != 446 || Dkc2VideoExtra() != 95 ||
+      Dkc2VideoPixelCount() != 446u * 224u || kDkc2VideoMaximumWidth != 446 ||
+      !Dkc2VideoAspectFromName("21:9", &ultra) || ultra != kDkc2VideoAspect21x9 ||
+      strcmp(Dkc2VideoAspectName(ultra), "21:9") != 0) {
+    fprintf(stderr, "FAIL: ultrawide geometry and parser\n"); return 1;
+  }
+
   Dkc2VideoSetWidescreen(true);
   Dkc2VideoSetEdgePolicy(kDkc2VideoEdgeShift);
   if (Dkc2VideoTerrainReady() ||

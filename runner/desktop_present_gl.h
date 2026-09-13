@@ -9,6 +9,7 @@
 #include <stdint.h>
 
 #include "desktop_vsync.h"
+#include "desktop_crt.h"
 
 /* Opaque so the Windows/OpenGL implementation does not leak GL headers into
  * the desktop host or its synthetic configuration tests. */
@@ -31,5 +32,15 @@ bool Dkc2DesktopGlPresent(Dkc2DesktopGlPresenter *presenter,
 const char *Dkc2DesktopGlVersion(const Dkc2DesktopGlPresenter *presenter);
 Dkc2DesktopVsyncStatus Dkc2DesktopGlVsyncStatus(
     const Dkc2DesktopGlPresenter *presenter);
+
+bool Dkc2DesktopGlReconstructAvailable(const Dkc2DesktopGlPresenter *presenter);
+bool Dkc2DesktopGlCrtAvailable(const Dkc2DesktopGlPresenter *presenter);
+int Dkc2DesktopGlSetDisplay(Dkc2DesktopGlPresenter *presenter, int display,
+                           const Dkc2CrtSettings *crt);
+const char *Dkc2DesktopGlShaderError(const Dkc2DesktopGlPresenter *presenter);
+/* Returns the effective sampler; unavailable shaders fall back to filtering. */
+int Dkc2DesktopGlSetUpscaler(Dkc2DesktopGlPresenter *presenter, int upscaler,
+                            bool linear_filter, int mode, float strength,
+                            float softness, float shading);
 
 #endif

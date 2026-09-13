@@ -15,6 +15,7 @@ enum {
   kDkc2MacCommandAspectNative = 1u << 6,
   kDkc2MacCommandAspect16x10 = 1u << 7,
   kDkc2MacCommandAspect16x9 = 1u << 8,
+  kDkc2MacCommandAspect21x9 = 1u << 10,
   kDkc2MacCommandQuit = 1u << 9,
 };
 

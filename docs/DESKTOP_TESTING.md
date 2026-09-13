@@ -188,10 +188,10 @@ Shortcuts page should continue to show Escape / Guide / Start+Back for the
 overlay and F for the performance log; those recovery shortcuts are
 intentionally not remappable.
 
-The atomic GDI compatibility presenter does not have an ImGui renderer.
-It remains available for machines where OpenGL cannot start, but has no
-overlay; Escape retains its former Quit behavior there. Assist shortcuts can
-still be enabled from the pre-boot launcher and operate on the first slot.
+The GDI compatibility presenter renders the same ImGui overlay using SDL's
+software renderer. Check Escape, mouse navigation, binding capture, resume,
+and resize on GDI as well as OpenGL. Escape must display the menu and pause
+gameplay rather than leave a paused frame with no visible controls.
 
 The pre-boot launcher has separate Assist Tools and Credits pages. Confirm the
 Assist checkbox and all four Assist bindings survive a launcher restart and
@@ -354,6 +354,30 @@ that directional and face-button mappings respond. Record:
    stable when held; and
 4. the approximate title/demo or level location of every problem.
 
+For simultaneous co-op, attach two controllers (or set Player 1/2 sources in
+the launcher), start a game with "2 PLAYER TEAM" selected, and record:
+
+1. both Kongs move, jump, and attack at the same time, each from their own
+   controller (the second Kong stands by until player 2 first presses a
+   button, then stays playable);
+2. when one Kong is hit, only that Kong runs off; the other player's
+   controller keeps driving the survivor, and a broken DK barrel returns the
+   lost Kong to the same player's controller;
+3. the camera follows one Kong (deliberately separating the players can walk
+   the second Kong off-screen; that is a known limitation, not a defect); and
+4. with "2P Team mode" set to Classic (or `DKC2_COOP=classic`), control
+   alternates exactly like the cartridge: the inactive Kong follows by AI and
+   control passes on a hit.
+
+Automated evidence for items 1 and 4 already exists: a deterministic
+4,122-frame route (crafted TEAM save image plus recorded title-to-first-level
+navigation, replayed by the headless host) drives controller 1 and controller
+2 in separate and combined windows. Under the simultaneous policy the second
+Kong's slot moves only when its own controller is active and both slots move
+together in the combined window; under the classic policy the identical
+recording leaves the second Kong's slot untouched. The `DKC2_COOP_TRACE`
+probe in the headless host reproduces this comparison.
+
 The automated desktop smoke test runs 180 hidden frames, opens and renders the
 overlay for 30 host presentations while confirming emulation is paused,
 closes it and resumes, executes one real 3x fast-forward iteration, captures
@@ -492,3 +516,167 @@ Manual acceptance must cover:
 4. enemies spawning, animating, colliding, and despawning correctly in both
    margins; and
 5. death/restart, bonus entry, goal, map, and save-state transitions.
+
+
+## Windows dropdown regression (2026-09-13)
+
+`desktop_menu` covers all valid choice ranges, invalid IDs and enum parity.
+`windows_menu` creates an actual hidden SDL/Win32 window and checks native menu
+hierarchy, dark owner drawing, mnemonics, client sizing, command delivery,
+disabled-command rejection, state checkmarks, and detach/reattach across
+fullscreen. `windows_input` verifies the complete default keyboard mapping
+before SDL starts, during SDL initialization and after SDL_Quit, plus buffered
+short taps. `desktop_input` covers controller binding/routing and requires
+Start+Back to remain blocked until both buttons have released.
+
+Run the complete configured Release CTest suite. If the Windows PowerShell
+packaging test cannot find Get-FileHash when launched from PowerShell 7, prepend
+`$env:SystemRoot\System32\WindowsPowerShell\v1.0\Modules` to the test process's
+PSModulePath; this is an inherited environment issue, not a packaging-code fix.
+
+For manual acceptance use a separate executable directory and external ROM;
+set SNESRECOMP_INPUT_REC to an external recording path. Confirm keyboard Start,
+directions and face buttons in gameplay; open menus by mouse and Alt mnemonics;
+change aspect/player sources; pause/resume; Quick Save/Load with Assist off;
+and Alt+Enter/Escape fullscreen recovery. Confirm no menu keys reach the guest
+recording. Physical pads and Linux/macOS require separate platform acceptance.
+
+`supplied_rom_gdi_overlay` exercises the software ImGui backend with the
+external supported ROM. `desktop_present` checks that CPU overlay drawing sees
+the finished game frame and appears in the final GDI presentation.
+`supplied_rom_coop_route` runs `scripts/check_coop_route.py` from blank SRAM,
+selects a new TEAM game and checks P1-only, P2-only, post-landing and concurrent
+movement against classic mode (3,518 frames per policy). Its temporary replay
+and WRAM traces are outside the repository and are deleted when the check ends.
+
+`supplied_rom_coop_combat` runs `scripts/check_coop_combat.py` using the same
+blank-SRAM TEAM navigation. P2 roll and stomp routes keep P1 over 100 pixels
+away from the defeated enemy; the stomp must put P2 in bounce state and move
+it upward while P1 remains grounded. A contact route must hurt only P2 while
+the enemy stays alive, and a P1 roll route guards ordinary attack behavior.
+The check compares each Kong's normal CGRAM colors against the supported
+external ROM, without embedding palette bytes in source. Optional
+`DKC2_COOP_TRACE_SPRITES=1` adds 24 sprite slots, reaction/collision pointers,
+and both Kong palettes to the private `DKC2_COOP_TRACE` output. These traces
+are observation-only and must remain outside Git. Roll and stomp checks now
+also require P2 to walk and jump after its attack recovery.
+
+`supplied_rom_coop_barrels` checks P2 DK-barrel throws in both directions and a
+regular-barrel throw with P1 on a different platform height. It verifies the
+carried position, release origin, trajectory and subsequent movement, and
+rejects DK-barrel rescue of an already present player.
+`supplied_rom_coop_lifecycle` checks hurt departure, held-input rejection,
+save/load while lost, P1's DK-barrel rescue, restored P2 movement/collisions,
+and a second loss/load. `DKC2_SAVESTATE_OUTPUT` writes the final headless frame
+snapshot to an explicitly supplied private path for this check.
+
+For the owner's September 13 Pirate Panic ledges snapshot, run:
+
+```powershell
+python scripts/check_coop_saved_state.py --runner build/Release/dkc2_snesrecomp_headless.exe --rom C:/private/dkc2.sfc --state C:/private/dkc2s0.sav
+```
+
+The checker prints the input state hash and covers both controller roles for
+contact damage, roll kills and subsequent movement with P2 as the camera leader.
+The accepted input hash is
+`5cd521b68ff3daaca043c4e7624c1bd8ca211cd072f580a438ef303e3ff51ee3`.
+This layout-specific route is additional acceptance, not a mandatory public fixture.
+Full-game enemies/bosses, other animal types and special throwable interactions,
+death/respawn and physical gamepads need separate acceptance.
+
+
+### Rambi ownership and death handoff
+
+`supplied_rom_coop_handoff` starts a new TEAM game, lets P1 take damage, and
+requires P2's position to remain unchanged at the leader switch. It checks that
+turn freeze clears, a live enemy changes position over subsequent frames, P2
+can move, and P1 remains lost after save/load.
+
+The later September 13 animal ledges save has SHA-256
+`3f5a2b019b68fef226fd7b994ab31a566e7b9aec5e33a7a46a1ba01e6fb21307`.
+Keep it outside Git and either run the check directly or configure its private
+path to include it in CTest:
+
+```powershell
+python scripts/check_coop_animals.py --runner build/Release/dkc2_snesrecomp_headless.exe --rom C:/private/dkc2.sfc --state C:/private/animal-ledges.sav
+cmake -S . -B build -DDKC2_COOP_ANIMAL_STATE=C:/private/animal-ledges.sav
+ctest --test-dir build -C Release -R supplied_rom_coop_animals --output-on-failure
+```
+
+Both players must mount, ride, jump, dismount and remount. The on-foot partner
+must retain a normal jump, and cannot steer or dismount the rider. Mounting
+ownership must survive a fresh process loading the saved state; P2 must also
+take over after P1 dismounts. Traces and generated snapshots use temporary
+external directories. Other animal types, transformations and animal damage
+handoffs still need separate acceptance.
+
+
+`supplied_rom_coop_widescreen` uses the same optional `DKC2_COOP_ANIMAL_STATE`
+fixture. It changes leader through actual mounting/dismounting, then walks
+both Kong roles to both screen edges in 4:3, 16:10 and 16:9. The checks require
+26 or 43 additional playable columns per side in a centered wide view, while
+the other controller's Kong stays stationary. A fresh TEAM entrance snapshot
+then checks Glide, Shift, Bars and Reflect policies at the west level bound,
+including the extra east-side reach of an inward-shifted view. No private
+state or generated image is committed with these tests.
+
+
+### Mounted TEAM banana collection
+
+`scripts/check_coop_bananas.py` accepts `--runner`, `--rom`, and an external
+`--state` for the reported mounted Pirate Panic trail. Fixture SHA-256:
+`4123ce28e54f2eaf7cda66e14374d530bf845b605550f5797d091bd66682e421`.
+Set `DKC2_COOP_BANANA_STATE` to that private snapshot when configuring CMake
+to enable `supplied_rom_coop_bananas`. The source-owned recipes move both
+controller roles, exchange the rider, load mounted/collected snapshots, and
+check separate on-foot, riding and dismounted collection. The shared BCD
+banana count is observed through `DKC2_COOP_TRACE_SPRITES`; a repeated path
+must not award previously collected bananas again. Tests do not patch guest
+memory or store game data in Git. Physical controller and other-animal
+acceptance remain separate.
+
+
+### Display parity and rumble
+
+`desktop_shaders` uses synthetic checkerboards, slopes and gradients to compare
+native WGL with SDL output for four color presets, Nearest/Bilinear, all five
+Reconstruct modes, and the three tuning endpoints (40 paired settings). It
+requires a working OpenGL GPU. Default framebuffer versus RGBA8 FBO rounding
+may differ by one 8-bit channel step in fewer than 0.1% of channels; larger
+errors fail. Tuning controls must change output independently. GDI color-model
+bytes and atomic overlay composition remain covered by `desktop_present`.
+
+`supplied_rom_coop_widescreen` now covers 21:9 for both players in addition to
+the original three aspects. `check_widescreen_state_corpus.py --aspect 21:9`
+checks the authentic center and margins with external snapshots. The SDL
+`DKC2_DESKTOP_TEST_LOADSTATE` hook now works on Windows as well as macOS.
+
+The combat replay requires the P2 stomp to emit exactly P2 feedback and requires
+ordinary rolling/jumping to emit none. Synthetic tests cover P1 solo mapping,
+classic/contest mapping, clearing events on restore, and keyboard/gamepad
+routing. Escape > Settings exposes Stomp rumble, per-player device status,
+and separate test pulses. Physical motor feel remains a manual acceptance step.
+
+`supplied_rom_desktop_settings` launches isolated WGL, GDI and SDL copies twice
+each, opens and closes the pause overlay, and verifies persisted non-default
+CRT, reconstruction, rumble, aspect, co-op and input preferences. GDI must
+preserve the saved Reconstruct request even though its active sampler falls
+back. This catches inadvertent global-setting resets during overlay creation.
+
+
+## CRT, characters and replacement audio
+
+`desktop_shaders` compares 40 flat and 13 CRT combinations on WGL and SDL.
+`supplied_rom_desktop_settings` checks all persisted tube values across two
+launches of each host, including GDI fallback. `project_kongs_runtime` covers
+per-slot move state; `dkc2_msu1` and `dkc2_spc_music` use only synthetic fixtures.
+
+Private acceptance tools:
+
+- `check_project_kongs.py`: external pack and scene rendering/machine comparison.
+- `check_coop_barrels.py --kongs-pack PACK`: both-player replacement callbacks.
+- `check_msu1_pack.py`: real PCM headers, SFX, fallback and gameplay equivalence.
+
+Keep every generated input, save, PCM capture and game image in an external
+output directory. Test the native Escape Characters/Settings controls after
+building; test results alone do not establish physical listening or rumble.

@@ -3,7 +3,8 @@
 #include "desktop_present.h"
 #include "desktop_viewport.h"
 
-#include <GL/gl.h>
+#include <SDL_opengl.h>
+#include "desktop_present_sdl.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -21,6 +22,8 @@ typedef struct Dkc2DesktopGlState {
   HDC dc;
   HGLRC context;
   GLuint texture;
+  Dkc2SdlPresenter pipeline;
+
   int texture_width;
   int texture_height;
   Dkc2DesktopVsyncStatus vsync_status;
@@ -64,6 +67,15 @@ static Dkc2DesktopVsyncStatus EnableWglVsync(void) {
 static void SetError(char *error, size_t capacity, const char *message) {
   if (!error || capacity == 0) return;
   (void)snprintf(error, capacity, "%s", message ? message : "OpenGL error");
+}
+
+static void *WglLoadProcedure(const char *name) {
+  PROC procedure = wglGetProcAddress(name);
+  if (!WglProcedureIsValid(procedure)) return NULL;
+  void *result = NULL;
+  _Static_assert(sizeof result == sizeof procedure, "WGL procedure representation");
+  memcpy(&result, &procedure, sizeof result);
+  return result;
 }
 
 bool Dkc2DesktopGlPresenterInit(Dkc2DesktopGlPresenter *presenter, HWND window,
@@ -124,6 +136,8 @@ bool Dkc2DesktopGlPresenterInit(Dkc2DesktopGlPresenter *presenter, HWND window,
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
   glBindTexture(GL_TEXTURE_2D, 0);
+  state->pipeline.texture = state->texture;
+  Dkc2GlPipelineInitialize(&state->pipeline, WglLoadProcedure);
   return true;
 }
 
@@ -132,6 +146,7 @@ void Dkc2DesktopGlPresenterDestroy(Dkc2DesktopGlPresenter *presenter) {
   Dkc2DesktopGlState *state = (Dkc2DesktopGlState *)presenter->state;
   if (state->context && state->dc)
     (void)wglMakeCurrent(state->dc, state->context);
+  Dkc2GlPipelineDestroy(&state->pipeline);
   if (state->texture) glDeleteTextures(1, &state->texture);
   if (state->context) {
     (void)wglMakeCurrent(NULL, NULL);
@@ -182,25 +197,14 @@ bool Dkc2DesktopGlPresent(Dkc2DesktopGlPresenter *presenter,
     glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, source_width, source_height,
                     GL_BGRA, GL_UNSIGNED_BYTE, pixels);
   }
-  GLint sampling = linear_filter ? GL_LINEAR : GL_NEAREST;
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, sampling);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, sampling);
-
   glMatrixMode(GL_PROJECTION);
   glLoadIdentity();
   glMatrixMode(GL_MODELVIEW);
   glLoadIdentity();
   glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
-  glBegin(GL_QUADS);
-  glTexCoord2f(0.0f, 1.0f);
-  glVertex2f(-1.0f, -1.0f);
-  glTexCoord2f(1.0f, 1.0f);
-  glVertex2f(1.0f, -1.0f);
-  glTexCoord2f(1.0f, 0.0f);
-  glVertex2f(1.0f, 1.0f);
-  glTexCoord2f(0.0f, 0.0f);
-  glVertex2f(-1.0f, 1.0f);
-  glEnd();
+  state->pipeline.linear_filter = linear_filter;
+  Dkc2GlPipelineRender(&state->pipeline, 0, source_width, source_height,
+                       client_width, client_height, &viewport);
   glBindTexture(GL_TEXTURE_2D, 0);
   glDisable(GL_TEXTURE_2D);
   if (overlay_draw) {
@@ -225,4 +229,36 @@ Dkc2DesktopVsyncStatus Dkc2DesktopGlVsyncStatus(
   const Dkc2DesktopGlState *state =
       (const Dkc2DesktopGlState *)presenter->state;
   return state->vsync_status;
+}
+
+bool Dkc2DesktopGlReconstructAvailable(const Dkc2DesktopGlPresenter *presenter) {
+  const Dkc2DesktopGlState *state = presenter ? presenter->state : NULL;
+  return state && state->pipeline.program != 0;
+}
+
+const char *Dkc2DesktopGlShaderError(const Dkc2DesktopGlPresenter *presenter) {
+  const Dkc2DesktopGlState *state = presenter ? presenter->state : NULL;
+  return state ? state->pipeline.shader_error : "OpenGL is not active";
+}
+
+int Dkc2DesktopGlSetUpscaler(Dkc2DesktopGlPresenter *presenter, int upscaler,
+                            bool linear_filter, int mode, float strength,
+                            float softness, float shading) {
+  Dkc2DesktopGlState *state = presenter ? presenter->state : NULL;
+  if (!state) return linear_filter ? 1 : 0;
+  state->pipeline.linear_filter = linear_filter;
+  return Dkc2SdlPresenterSetUpscaler(&state->pipeline, upscaler, mode,
+                                     strength, softness, shading);
+}
+
+bool Dkc2DesktopGlCrtAvailable(const Dkc2DesktopGlPresenter *presenter) {
+  const Dkc2DesktopGlState *state = presenter ? presenter->state : NULL;
+  return state && Dkc2GlPipelineCrtAvailable(&state->pipeline);
+}
+
+int Dkc2DesktopGlSetDisplay(Dkc2DesktopGlPresenter *presenter, int display,
+                           const Dkc2CrtSettings *crt) {
+  Dkc2DesktopGlState *state = presenter ? presenter->state : NULL;
+  return state ? Dkc2SdlPresenterSetDisplay(&state->pipeline, display, crt)
+               : kDkc2DisplayFlat;
 }

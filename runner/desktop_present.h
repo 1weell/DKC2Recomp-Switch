@@ -13,6 +13,9 @@ typedef struct Dkc2DesktopPresenter {
   HGDIOBJ original_bitmap;
   int width;
   int height;
+  uint8_t *back_pixels;
+  bool (*overlay_draw)(void *user, uint8_t *pixels, int width, int height);
+  void *overlay_user;
 } Dkc2DesktopPresenter;
 
 void Dkc2DesktopPresenterDestroy(Dkc2DesktopPresenter *presenter);

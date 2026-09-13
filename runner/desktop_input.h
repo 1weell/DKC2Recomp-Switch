@@ -30,6 +30,8 @@ enum {
   kDkc2HostFastForward = 1u << 1,
   kDkc2HostSaveState = 1u << 2,
   kDkc2HostLoadState = 1u << 3,
+  kDkc2MenuInputToggle = 1u << 0,
+  kDkc2MenuInputBlock = 1u << 1,
 };
 
 typedef struct Dkc2GamepadState {
@@ -43,6 +45,10 @@ typedef struct Dkc2GamepadState {
 } Dkc2GamepadState;
 
 typedef bool (*Dkc2KeyPressedFn)(int scancode, void *context);
+
+/* Consume Start+Back through the release of BOTH buttons, including when
+ * the chord closes the overlay. It must never become guest Start/Select. */
+uint32_t Dkc2UpdateMenuChord(uint32_t buttons, bool *latched);
 
 uint32_t Dkc2MapGamepad(uint32_t buttons, int16_t left_x, int16_t left_y,
                         int16_t deadzone);
@@ -65,6 +71,7 @@ uint32_t Dkc2MapAssistBindings(
 uint32_t Dkc2ApplyAssistGate(uint32_t mapped_actions,
                              uint32_t platform_actions,
                              bool assist_tools);
+int Dkc2GamepadIndexForPlayer(const int sources[2], int player);
 uint32_t Dkc2RoutePlayerInputsWithBindings(
     const uint32_t keyboard_inputs[kDkc2DesktopPlayerCount],
     const Dkc2GamepadState *gamepads, size_t gamepad_count,

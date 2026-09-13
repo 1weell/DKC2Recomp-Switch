@@ -117,3 +117,10 @@ bool Dkc2DesktopOverlayModelArmPadCapture(
 bool Dkc2DesktopEscapeExitsFullscreen(bool fullscreen, bool overlay_open) {
   return fullscreen && !overlay_open;
 }
+
+int Dkc2DesktopOverlayEffectiveUpscaler(bool reconstruct_available,
+                                       int saved_upscaler,
+                                       bool linear_filter) {
+  return reconstruct_available && saved_upscaler == 2
+      ? 2 : (linear_filter ? 1 : 0);
+}

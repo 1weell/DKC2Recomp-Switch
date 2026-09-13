@@ -1,5 +1,8 @@
 #include "dkc2_game.h"
+#include "dkc2_coop.h"
 #include "dkc2_hdma.h"
+#include "dkc2_kongs.h"
+#include "dkc2_music.h"
 #include "dkc2_video.h"
 
 #include "common_cpu_infra.h"
@@ -14,6 +17,7 @@
 #include "snes/ws_shadow.h"
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <string.h>
 
 enum {
@@ -278,7 +282,15 @@ typedef struct Dkc2HostSnapshot {
   uint8_t cpu_initialized;
   uint8_t last_hdmaen;
   uint8_t memsel;
+  /* Use two bytes of the original zeroed tail padding. Keep every legacy
+   * field offset and the snapshot size unchanged for existing save slots. */
+  uint8_t coop_marker;
+  uint8_t coop_lost_mask;
 } Dkc2HostSnapshot;
+
+_Static_assert(offsetof(Dkc2HostSnapshot, coop_lost_mask) <
+               ((offsetof(Dkc2HostSnapshot, memsel) + 8) & ~(size_t)7),
+               "co-op snapshot metadata must fit legacy tail padding");
 
 enum {
   /* NTSC master clocks per non-short host frame. The shared interpreter
@@ -288,7 +300,69 @@ enum {
   kDkc2NtscFrameMasterClocks = 1364 * 262,
 };
 
+/* Resolve the same owner as the existing co-op generated-code wrappers.
+ * The replacement-character hooks run synchronously in this temporary view;
+ * it is restored before any guest instruction, interrupt or save can run. */
+static uint16_t Dkc2KongOwner(CpuState *cpu, uint16_t original) {
+  const uint16_t current = cpu_read16(cpu, 0, 0x64);
+  return current == 0xDE2 || current == 0xE40
+      ? Dkc2CoopGateActiveValue(cpu, original)
+      : Dkc2CoopHeldOwnerValue(cpu, original);
+}
+bool Dkc2KongsUseCallbacksForCpu(CpuState *cpu) {
+  if (!Dkc2KongsReady() || (!Dkc2KongsChoice(0) && !Dkc2KongsChoice(1))) return false;
+  const uint16_t original = cpu_read16(cpu, 0, 0x593);
+  const uint16_t owner = Dkc2KongOwner(cpu, original);
+  cpu->ram[0x593] = (uint8_t)owner; cpu->ram[0x594] = (uint8_t)(owner >> 8);
+  const bool use = Dkc2KongsUseCallbacks(cpu->ram);
+  cpu->ram[0x593] = (uint8_t)original; cpu->ram[0x594] = (uint8_t)(original >> 8);
+  return use;
+}
+static void Dkc2KongInstruction(CpuState *cpu, uint32_t pc) {
+  if (!Dkc2KongsReady() || (!Dkc2KongsChoice(0) && !Dkc2KongsChoice(1))) return;
+  if ((pc | 0x800000u) == 0xB39FEA) {
+    /* The native carried-object routine has just loaded its owner into X.
+     * This preserves the co-op owner wrapper when Kongs uses the LLE path. */
+    const uint16_t owner = Dkc2CoopHeldOwnerValue(cpu, cpu->X);
+    cpu_write_x_x(cpu, owner);
+    cpu->_flag_Z = cpu->X == 0;
+    cpu->_flag_N = (cpu->X & (cpu->x_flag ? 0x80 : 0x8000)) != 0;
+    cpu->P = (uint8_t)((cpu->P & ~0x82) | (cpu->_flag_Z ? 2 : 0) | (cpu->_flag_N ? 0x80 : 0));
+    return;
+  }
+  const uint16_t original = cpu_read16(cpu, 0, 0x593);
+  const uint16_t held = cpu_read16(cpu, 0, 0xD7A);
+  const uint16_t owner = Dkc2KongOwner(cpu, original);
+  const uint16_t object = Dkc2CoopHeldObjectValue(cpu, held);
+  cpu->ram[0x593] = (uint8_t)owner; cpu->ram[0x594] = (uint8_t)(owner >> 8);
+  cpu->ram[0xD7A] = (uint8_t)object; cpu->ram[0xD7B] = (uint8_t)(object >> 8);
+  const uint32_t redirect = Dkc2KongsGameplay(cpu->ram, g_rom, 0x400000, pc,
+                                            (uint32_t)snes_frame_counter);
+  cpu->ram[0x593] = (uint8_t)original; cpu->ram[0x594] = (uint8_t)(original >> 8);
+  cpu->ram[0xD7A] = (uint8_t)held; cpu->ram[0xD7B] = (uint8_t)(held >> 8);
+  if (redirect) interp_bridge_pre_opcode_redirect(redirect);
+}
+
+static void Dkc2MusicInstruction(CpuState *cpu, uint32_t pc) {
+  (void)pc;
+  Dkc2MusicCommand(cpu->ram[0x1C], cpu->X);
+}
+
 static void Dkc2RunOneFrame(void) {
+  Dkc2MusicFrame(g_snes->apu, g_rom, 0x400000, g_ram);
+  interp_bridge_set_pre_opcode_hook(0xb581fb, Dkc2MusicInstruction);
+  /* These hooks observe US v1.0 player dispatch, carried-object placement,
+   * and throw animation callbacks. They do not replace shared runtime code. */
+  interp_bridge_set_pre_opcode_hook(0xb89616, Dkc2KongInstruction);
+  interp_bridge_set_pre_opcode_hook(0xb39fe7, Dkc2KongInstruction);
+  interp_bridge_set_pre_opcode_hook(0xb39fea, Dkc2KongInstruction);
+  interp_bridge_set_pre_opcode_hook(0xb9d8ac, Dkc2KongInstruction);
+  interp_bridge_set_pre_opcode_hook(0xb9dcea, Dkc2KongInstruction);
+  interp_bridge_set_pre_opcode_hook(0xb9d8be, Dkc2KongInstruction);
+  interp_bridge_set_pre_opcode_hook(0xb9d967, Dkc2KongInstruction);
+  interp_bridge_set_pre_opcode_hook(0xb9dfd5, Dkc2KongInstruction);
+  interp_bridge_set_pre_opcode_hook(0xb9d9e0, Dkc2KongInstruction);
+  interp_bridge_set_pre_opcode_hook(0xb8c924, Dkc2KongInstruction);
   bool first_frame = !s_cpu_initialized;
   if (s_next_frame_master == 0) {
     s_next_frame_master =
@@ -299,6 +373,7 @@ static void Dkc2RunOneFrame(void) {
   interp_bridge_set_master_deadline(s_next_frame_master);
 
   if (first_frame) {
+    Dkc2CoopResetSession();
     cpu_state_init(&g_cpu, g_ram);
     s_cpu_initialized = true;
   }
@@ -325,6 +400,7 @@ static void Dkc2RunOneFrame(void) {
     snes_sync_master_clock(g_snes, g_cpu.master_cycles);
   }
   s_next_frame_master += kDkc2NtscFrameMasterClocks;
+  Dkc2MusicFrame(g_snes->apu, g_rom, 0x400000, g_ram);
 }
 
 static void Dkc2SaveExtra(SaveLoadInfo *sli) {
@@ -343,6 +419,8 @@ static void Dkc2SaveExtra(SaveLoadInfo *sli) {
   snapshot.cpu_initialized = s_cpu_initialized ? 1u : 0u;
   snapshot.last_hdmaen = g_snesrecomp_last_hdmaen;
   snapshot.memsel = g_memsel;
+  snapshot.coop_marker = 0xC2;
+  snapshot.coop_lost_mask = Dkc2CoopSaveLostMask();
   sli->func(sli, &snapshot, sizeof snapshot);
 }
 
@@ -363,10 +441,14 @@ static void Dkc2LoadExtra(SaveLoadInfo *sli, uint32_t version) {
   s_cpu_initialized = snapshot.cpu_initialized != 0;
   g_snesrecomp_last_hdmaen = snapshot.last_hdmaen;
   g_memsel = snapshot.memsel;
+  Dkc2CoopLoadLostMask(&g_cpu, snapshot.coop_lost_mask,
+                       snapshot.coop_marker == 0xC2);
 }
 
 static void Dkc2OnStateLoaded(uint32_t version) {
   (void)version;
+  Dkc2KongsReset();
+  Dkc2MusicStateLoaded(g_snes->apu, g_ram);
   g_cpu.ram = g_ram;
   g_apu_last_sync_master = g_cpu.master_cycles;
   g_snes->beamMasterLast = g_cpu.master_cycles;
@@ -2287,6 +2369,9 @@ void Dkc2DrawPpuFrame(void) {
       SimpleHdma_Init(&channels[channel], &g_dma->channel[channel]);
   }
 
+  Dkc2KongsPrepare(g_ppu, g_ram, g_rom,
+                    g_snes && g_snes->cart ? g_snes->cart->romSize : 0,
+                    (uint32_t)snes_frame_counter);
   const Dkc2HdmaBand *current_band = NULL;
   for (int line = 0; line <= 224; line++) {
     if (band_policies_active) {
@@ -2303,7 +2388,9 @@ void Dkc2DrawPpuFrame(void) {
         g_ppu->hScroll[layer] =
             (uint16_t)(g_ppu->hScroll[layer] + presentation_bias);
     }
+    Dkc2KongsBeginLine(g_ppu);
     ppu_runLine(g_ppu, line);
+    Dkc2KongsEndLine(g_ppu);
     if (presentation_bias != 0) {
       for (unsigned layer = 0; layer < 4; layer++)
         g_ppu->hScroll[layer] =

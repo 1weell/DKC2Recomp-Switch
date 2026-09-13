@@ -30,3 +30,19 @@ in `recomp/launcher/README.md`.
 
 DKC2Recomp does not stage or ship ROM data, extracted in-game graphics, music,
 save files, screenshots, audio captures, or generated ROM-derived source.
+
+
+## DKC3Recomp Windows menu
+
+The desktop menu model, native dark menu and related synthetic tests are adapted
+from DKC3Recomp under MIT. Exact revision, local adaptations and license text:
+[`third_party/dkc3_menu/README.md`](third_party/dkc3_menu/README.md),
+[`third_party/dkc3_menu/LICENSE`](third_party/dkc3_menu/LICENSE).
+
+The same DKC3 MIT provenance also covers display option labels, ultrawide
+geometry and reconstruction shader lineage in the display parity follow-up.
+See the feature inventory and the expanded local-adaptation record.
+
+
+MSU-1 helpers: [provenance and MIT licenses](third_party/dkc_msu1/README.md).
+Optional character pack: [Project Kongs provenance](third_party/project_kongs/README.md).

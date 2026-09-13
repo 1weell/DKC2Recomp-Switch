@@ -174,8 +174,32 @@ The interactive Windows host converts focused keyboard and XInput state to two
 players and persists each None/Keyboard/Gamepad source plus deadzone. Connected
 gamepads are assigned in XInput user order to players that selected Gamepad,
 then packed into the shared runtime's existing controller-1/controller-2 input
-word. D-pad and left-stick directions share the directional bits. Synthetic
-tests cover every face, menu, shoulder, D-pad, analog direction, trigger
+word. D-pad and left-stick directions share the directional bits. The game's
+own "2 PLAYER TEAM" menu selection is the co-op switch; a source-owned
+generated-code adapter (`scripts/apply_dkc2_coop_overrides.py`,
+`runner/dkc2_coop.{c,h}`) then lets each Kong slot read its own controller
+every frame instead of the cartridge's alternating control, keyed by the
+cartridge's slot-to-controller binding at `$80:883B`. The classic alternating
+policy remains selectable (overlay "2P Team mode", `CoopMode` in
+`launcher.cfg`, or `DKC2_COOP=simultaneous|classic`) and is byte-for-byte
+stock outside TEAM mode. The adapter chooses which controller words the
+Kong action gate admits and redirects passive/follow-history states `$13/$22`
+at Kong dispatch to retain independent control. On ordinary follower idle it
+also enables the normal `$1E` interaction mask and `$E4` render order, preserving
+special action masks. Normal Kong clipping now uses the existing inactive-Kong
+hitbox path for the second actor. A queued stomp remembers the colliding Kong
+so its bounce does not go to the active leader. The normal follower palette's
+`$1E` byte offset is suppressed in simultaneous TEAM mode; special palettes
+retain their own paths. The two controller masks on the bus are unchanged.
+The follower's normal mask can also be `$06` after a leader swap; idle
+promotion restores `$1E` for that exact mask while keeping hurt invincibility.
+Recovery, attachment animation and the throwable release terrain sweep consult
+the acting/owning Kong. The policy records lost Kongs until an accepted DK-barrel
+rescue; a small host snapshot field preserves that record across save/load and
+rewind. This uses existing zeroed tail padding without moving guest state or
+changing snapshot size. Legacy slots are still accepted. TEAM's turn-handoff
+wait resumes the survivor's already initialized jump without changing SNES inputs.
+Synthetic tests cover every face, menu, shoulder, D-pad, analog direction, trigger
 threshold, two-player route, and port packing. Left trigger is a host-only
 rewind action and right trigger is host-only fast-forward; neither is exposed
 to an SNES controller register. Both actions, plus configurable and overlay
@@ -1073,3 +1097,89 @@ therefore substituted 1,120 verified-blank margin samples apiece despite the
 correct source tiles being decoded. Shadow Y now unwraps the common tile
 origin (`ppuY & $03F8`) and restores `ppuY & 7` afterward. Exact replay removes
 all three large blank bursts.
+
+
+## Windows menu input isolation (2026-09-13)
+
+Native menus route settings/actions on the host thread and preserve the two
+packed 12-bit joypad words. Keyboard polling no longer requires SDL video
+initialization; transient keydowns survive until the next frame. Focus and menu
+transitions release host input without fabricating guest responses. Synthetic
+coverage exercises all twelve default Win32 buttons across SDL init/teardown,
+controller routing, deadzones and menu-chord release. Physical controller
+hot-plug and two-controller gameplay still require device acceptance.
+
+
+## Co-op animal and turn-freeze observation (2026-09-13)
+
+Animal ownership and turn freeze are guest game policy, not new emulated
+hardware responses. Co-op input still traverses the two real SNES controller
+ports. Optional sprite tracing now reports mounted-animal slot/type (`$6C/$6E`)
+and the game time-freeze reason (`$0A36`). The death regression observes a live
+enemy moving again after the turn-wait freeze is cleared; changing player
+coordinates alone is insufficient evidence that simulation resumed.
+
+The external Pirate Panic snapshot exercises Rambi with both controller words,
+including a player on foot, saved mounted ownership and passing the animal.
+This does not establish physical gamepad, other-animal or full-game coverage.
+
+
+The co-op screen clamp now observes the confirmed host viewport width/bias to
+admit the visible side areas. Its two generated operands change only for
+simultaneous TEAM Kong updates; CPU arithmetic and SNES input hardware remain
+unchanged. Trace fields `camera_x`, `camera_max`, `wide_extra`, `wide_bias` and
+`wide_ready` make movement-to-viewport acceptance reproducible. Synthetic checks
+cover unavailable terrain, native/classic/solo/contest modes and both outer
+level bounds; private routes cover both players and all three aspect ratios.
+
+
+## TEAM banana hitbox capacity
+
+The dedicated list prepares at most two rectangles from the leader union at
+`$09B3`, the animal/rider special box at `$09EB`, then the follower union at
+`$09CB`. With all three valid, the follower is skipped. The mounted Pirate Panic
+snapshot reproduced 30 bananas before and after the on-foot jump through the
+trail; the adapted group walker reaches 38 using the same controller inputs.
+After a controller-driven rider exchange, Player 2 on foot reaches 35. A rider
+route reaches 43 both alone and after revisiting the first player's collected
+trail. Counts are decoded from the shared BCD word `$096D`.
+
+The adaptation temporarily supplies the third rectangle to the existing
+second-slot pass and restores the second rectangle before repeating that pass.
+No hitbox union spans the two players. Cleared banana-group bits prevent double
+collection, and the normal guest counter/life mechanism owns awards. This is a
+gameplay adaptation, with no changes to PPU or controller hardware. Other
+animal types and transformations remain outside this route's acceptance.
+
+
+## Reconstruct host capability
+
+The same GLSL 1.20 source now runs in both the SDL and native WGL presenters.
+Native GDI continues to use its fixed samplers. Compiled shader availability,
+not the saved renderer preference, gates the menus. This is a presentation
+change; color LUTs and all guest hardware remain unchanged.
+
+The 21:9 source width is 446 (95 extra columns per side), the nearest symmetric
+width below the shared runtime's nine-bit OAM limit. Host buffers now reserve
+that maximum while native and existing wide widths retain their identities.
+Co-op movement derives its limits from the current extra columns and level walls.
+
+Rumble observes the existing accepted player_interaction_1B callback, then emits
+host-only P1/P2 event bits. Solo maps to P1; classic/contest use the original
+active controller; simultaneous TEAM uses the colliding Kong's controller.
+Consuming/resetting events never writes WRAM or changes guest/save contents.
+
+
+## MSU-1 and CRT host policies (2026-09-13)
+
+US v1.0 $B5:8291 uploads ROM $EE:0088 to APU $0560. Scheduler $07A9 has
+its music branch at $07AB (ROM offset $2E02D3). SFX ownership is APU
+$01E0..$01E7. The host validates surrounding scheduler bytes against the
+verified image before repairing policy or releasing existing music voices.
+SPC command entry $B5:81FB receives X; primary song is WRAM $001C. Variant
+restoration reads stable APU $E5/$E6 and the $1312 sequence table. These are
+DKC2-specific verified addresses. Old shared echo is cleared on a mute change.
+
+CRT is a host GL simulation after color conversion. GDI retains saved CRT
+preferences but disables unavailable shader controls. Tube mode performs its
+own scaling; Flat panel retains Nearest/Bilinear/Reconstruct.

@@ -69,6 +69,9 @@ void Dkc2VideoSetAspect(Dkc2VideoAspect aspect) {
     case kDkc2VideoAspect16x10:
       g_ws_extra = kDkc2Video16x10Extra;
       break;
+    case kDkc2VideoAspect21x9:
+      g_ws_extra = kDkc2Video21x9Extra;
+      break;
     case kDkc2VideoAspect16x9:
       g_ws_extra = kDkc2VideoWidescreenExtra;
       break;
@@ -95,6 +98,10 @@ bool Dkc2VideoAspectFromName(const char *name, Dkc2VideoAspect *aspect) {
     *aspect = kDkc2VideoAspect16x10;
     return true;
   }
+  if (strcmp(name, "21:9") == 0 || strcmp(name, "3") == 0) {
+    *aspect = kDkc2VideoAspect21x9;
+    return true;
+  }
   if (strcmp(name, "16:9") == 0 || strcmp(name, "2") == 0) {
     *aspect = kDkc2VideoAspect16x9;
     return true;
@@ -106,6 +113,8 @@ const char *Dkc2VideoAspectName(Dkc2VideoAspect aspect) {
   switch (aspect) {
     case kDkc2VideoAspect16x10:
       return "16:10";
+    case kDkc2VideoAspect21x9:
+      return "21:9";
     case kDkc2VideoAspect16x9:
       return "16:9";
     case kDkc2VideoAspectNative:

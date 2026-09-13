@@ -396,9 +396,10 @@ clear/pause queued audio, and continue presenting at the host rate. File-state
 actions reuse SNESrecomp's `RtlSaveSlotPath`,
 `RtlSaveSnapshot`/`RtlLoadSnapshot`, and `save_name_prefix`; the bounded
 selector maps to `saves/dkc2s0.sav` through `saves/dkc2s4.sav`, and only slot
-zero probes the old `saves/dkc20.sav` compatibility name. The GDI fallback has
-no ImGui renderer, but its keyboard Assist shortcuts follow the pre-boot
-opt-in state.
+zero probes the old `saves/dkc20.sav` compatibility name. The GDI fallback
+composites ImGui into its offscreen 32-bit DIB with the bundled SDLRenderer2
+backend and an SDL software renderer before the single final BitBlt. It shares
+the Win32 input backend, overlay model and settings persistence with OpenGL.
 
 `RecompLauncherCSettings` is the one persisted settings value shared by the
 pre-boot launcher, overlay, Win32 host, and SDL host. The overlay edits every
@@ -406,7 +407,7 @@ DKC2 setting shown before boot and exposes independent Player 1/2 input
 source, deadzone, and complete gameplay/Assist binding controls. Volume,
 texture filtering, screen model,
 controller routing, and Assist policy are safe to apply live. Window scale,
-fullscreen, renderer, audio enable, and skip-launcher remain restart-bound
+renderer, audio enable, and skip-launcher remain restart-bound
 because they affect native resources or startup flow. The shared audio
 frequency field is mirrored and persisted for launcher compatibility, but the
 current DKC2 hosts deliberately consume the S-DSP's native 32,040 Hz stream
@@ -899,6 +900,14 @@ sat on the mast at the right wall until the stage was left.
 
 ### Reconstruct upscaler (experiment)
 
+This shader is implemented by the SDL presenter, including `DKC2RecompSDL.exe`
+on Windows. Neither native Win32 GDI nor Win32 OpenGL implements it. The shared
+pause Settings page now gates Reconstruct by host platform and displays the
+effective nearest/bilinear sampler on Win32, without rewriting a saved shader
+preference. Unsupported tuning controls are hidden and the page names the
+supporting executable. The pre-boot launcher and native dropdown already
+expose only the capabilities implemented by their host.
+
 The macOS presenter is a fixed-function OpenGL 2.1 blit with nearest or
 bilinear sampling. On a 16-inch MacBook Pro the 342x224 frame is shown at
 about ten times its size, a fractional scale at which nearest gives uneven
@@ -1315,9 +1324,255 @@ or loads a state is not exactly reproducible from the input and starting SRAM
 alone. Fast forward remains deterministic because each emulated frame still
 receives and records one sample.
 
+## Simultaneous co-op boundary
+
+Two-player input is a game-behavior adaptation like widescreen: host-side
+routing is unchanged (the two packed 12-bit controller words still enter the
+two SNES ports), and the game's own "2 PLAYER TEAM" menu selection remains the
+co-op switch. The stock TEAM mode alternates control — the dispatch at
+`$80:8A00` fills one active input word from one controller each frame, and the
+Kong action gate at `$B8:B9C7` admits only the active Kong (`$0593`). The
+simultaneous policy instead lets both Kong slots read their own controller
+every frame: slot `$0DE2` (controller 1's Kong) reads the P1 held/pressed
+words `$0502/$0506`, and slot `$0E40` (controller 2's Kong) reads
+`$0504/$0508`, matching the cartridge's own slot-to-controller binding from
+`set_active_kong` (`$80:883B`).
+
+`scripts/apply_dkc2_coop_overrides.py` rewrites the generated gate the same
+way the widescreen adapter rewrites generated C: the gate compare's `$0593`
+read is wrapped with `Dkc2CoopGateActiveValue` (substituting
+`current_sprite` for the active-slot compare, so both Kongs are admitted; the
+fade fall-through is untouched) and the input path's `$050E/$0510` reads are
+wrapped with `Dkc2CoopSelectHeldWord`/`Dkc2CoopSelectPressedWord`
+(substituting per-controller words by slot). On the real USA v1.0 emission
+the gate lives inside `process_player_action_M0X0` at trace label `L_B8F3`,
+one byte and a function boundary away from both reference disassemblies —
+which is why the anchors are instruction-shape contexts (the current_sprite
+load feeding the `$0593` compare and its equality branch; the `$0983/$0981`
+stores after the word loads) with exactly-one-match counts and idempotent
+re-application, so generator drift fails regeneration instead of silently
+mis-patching. `runner/dkc2_coop.{c,h}` owns the policy: it defaults to
+simultaneous, never activates outside TEAM mode, and returns cartridge values
+byte-for-byte under the classic policy or in 1 PLAYER / 2 PLAYER CONTEST.
+
+Private-ROM replay exposed another requirement: the follower never reaches
+the input gate from its passive script state `$13`, and landing can return it
+to `$22`, which copies the leader's position history from `$7FA532/$7FA572`.
+The adapter therefore also wraps the `$2E,x` read in `kong_state_handler`.
+`Dkc2CoopSelectStateWord` changes an initially waiting `$13` to idle on that player's input and
+changes `$22` to idle even with neutral input. This runs before the follower
+handler can replay the leader's history and does not depend on the leader
+reaching its own input gate. Lost Kongs cannot use this initial join again.
+The alternating TEAM wait `$6F` resumes its existing post-handoff jump `$06`,
+clearing the turn-wait bit and its blink while preserving invincibility.
+Other action states retain their handlers. The
+state helper uses bank-$00 WRAM because the dispatcher sets DB to `$B8`.
+Every wrapper requires exactly one anchored call; nested or misplaced
+existing wrappers fail closed. The new-TEAM route in `check_coop_route.py`
+checks each player alone, post-landing control and both together against the
+classic policy, using observation-only `DKC2_COOP_TRACE` records. The
+policy is persisted as `CoopMode` in `launcher.cfg`, switchable live from the
+overlay Settings page, and process-overridable with
+`DKC2_COOP=simultaneous|classic`.
+
+Movement alone was insufficient: the cartridge gives the follower a zero
+interaction mask (`sprite+$30`) and back render order (`+$02 = $D8`), and
+`get_active_kong_clipping` skips it. For simultaneous TEAM, ordinary idle
+dispatch promotes only the inactive Kong's zero or `$06` follower mask to `$1E`
+and back order to `$E4`, leaving other action masks and states intact. `$06`
+appears after leader swaps and previously allowed enemies to pass through.
+The clipping
+entry redirects to the cartridge's existing inactive-Kong clipping function
+(`$BC:FB2C`), which maintains a separate hitbox and tests both Kongs. The redirect
+reuses the existing guest call frame; it does not introduce another JSL frame.
+
+The stomp reaction (`player_interaction_1B`) otherwise always selects the
+active Kong. When `set_player_interaction` accepts a new highest-priority
+reaction, the source wrapper records the enemy (`$0A84`) and collision Kong
+(`$6A`) in host policy state. The stomp consumes that record once and chooses
+the stock active/inactive metadata selector accordingly. A later collision
+cannot steal its target, a higher-priority queued reaction replaces the record,
+and the source must still match at consumption. This state is transient between
+queue and reaction; controller words and save formats are unchanged.
+
+The palette selector at `$BB:8B66` normally adds `$1E` bytes (15 colors) to
+choose the dim follower palette. A narrow immediate-value wrapper returns zero
+for simultaneous TEAM only. Status-effect and contest palettes keep their
+existing branches. Color changes take effect when the game refreshes its palette.
+`check_coop_combat.py` exercises P2 roll, stomp/bounce, contact damage and P1
+roll attacks from a new TEAM game, and checks both CGRAM palettes against the
+external supported ROM. It also requires walking and jumping after roll/stomp
+recovery. The recovery compare in `CODE_B9D705` treats independently controlled
+roll-stop `$04`, stomp-bounce `$16` and throw-finish `$3F` states as active recovery,
+so the original animation/landing path clears the action state at its normal time.
+
+Accepted pickup records the object slot/id and its Kong. Attachment, four
+animation commands and all five active-owner reads in `CODE_B8D4AE` (the release
+terrain sweep) use that owner. The terrain sweep must begin at the thrower:
+using a Kong on a lower platform can otherwise relocate a regular barrel at
+release. The shared `$0D7A` word is hidden from the non-owner's idle recovery.
+Carrying/throwing guest states reconstruct ownership after snapshot restore,
+and recycled sprite ids invalidate the transient record. Joining sets the
+cartridge's other-Kong-present bit so breaking a DK barrel does not rescue an
+already controlled player.
+
+A two-bit host loss mask observes hurt/death states `$24/$25/$05/$59` and
+blocks `$13` re-entry until the game accepts DK-barrel rescue `$3E`. Session
+reset clears the mask. `Dkc2HostSnapshot` stores a marker and the mask in two
+previously zeroed tail-padding bytes; original offsets and total size remain
+unchanged. Loading resets transient interaction/pickup records. For legacy
+snapshots without the marker, an absent waiting Kong that has left the initial
+follower render order is treated as lost; snapshots captured during hurt are
+observed again by dispatch. The original pre-promotion legacy waiting state is
+ambiguous, so its initial-join behavior is retained for compatibility.
+Private lifecycle acceptance saves after damage, reloads with held P2 input,
+rescues via P1's DK-barrel throw, moves P2, loses P2 again, then reloads again.
+
+These first-level routes do not imply full-game combat or throwable coverage.
+
+Hurt, death, barrel and control-swap animations retain their cartridge paths,
+with the bounded ownership, recovery and turn-wait adaptations above. Their
+full-game interaction with simultaneous inputs remains unverified. The camera follows
+the active Kong, so a separated second player can walk off-screen; joining
+from the wait state can still invoke the cartridge's catch-up behavior.
+The dispatch's `$0B02` bit-$10 remap
+(level-end forced-walk input neutralization) applies to the single active
+word and is bypassed in simultaneous mode, so both pads stay live during the
+scripted outro where stock neutralizes one; the forced walk itself is driven
+by `$091B`, not the gate. The policy reads guest WRAM through the
+runtime's CpuState accessors on the generated-code path; its direct guest
+writes are the selected sprite's state, interaction mask and render order at
+dispatch. The policy setting never enters controller registers,
+save states, SRAM, or input recordings, and the deterministic attract gates
+are unaffected because attract demos inject the active words directly and
+the game starts in 1 PLAYER mode.
+
 `scripts/create_private_diagnostic_version.ps1` is a deployment wrapper around
 that boundary, not a new runtime architecture. It assembles a private,
 external, append-only kit and preserves the SRAM that existed at recording
 start beside each route. That paired SRAM is supplied to deterministic replay,
 preventing later personal progress from changing a diagnostic run. ROMs,
 saves, recordings, memory dumps, and captures remain outside Git.
+
+## Simultaneous animal ownership and death handoff
+
+The cartridge has one mounted-animal context (`$6C/$6E`). Mounting now uses
+both existing Kong hitboxes when the inactive Kong is eligible to land. The
+candidate's state flags come from the owner's ROM; a stationary or rising
+partner cannot mask the leader's valid landing. The mount gate and its state
+lookup use the colliding Kong, scoped to unmounted animal updates so barrel
+callers of the shared state-flags routine retain their behavior.
+
+Accepted reaction `$17` records its source and collider before later collisions
+can overwrite `$6A`. At mount dispatch, a follower rider becomes the leader by
+swapping the guest Kong/work selectors and updating the character/controller
+selector words. Positions, action states and collision masks stay intact. The
+stock mount/dismount handlers then own the animal lifecycle. Controller routing
+still uses fixed Kong slots, and the guest selectors persist through existing
+save/load and rewind. The transient accepted-mount record resets on load.
+
+Named Kong movement, reaction and animation reads of `$6E` return zero for the
+on-foot partner. The generated tail paths are covered as well as their named
+entry routines; crate spawning retains its global occupancy check. The stock
+follower-to-animal attachment suppresses only its follower-present bit. These
+are fail-closed, idempotent source-owned adaptations; generated game code and
+private integration snapshots remain outside Git. One animal has one rider.
+Pirate Panic Rambi is accepted; other animal types and transformations are not.
+
+The dedicated banana collector accepts only two rectangles, preferring the
+leader and animal over the follower. When all three hitboxes are present in
+simultaneous TEAM, the group-entry operand temporarily supplies the follower's
+rectangle in the second scratch slot (`$0D3C/$0D40/$0D44/$0D48`). After that
+pass, the continuation restores those four words and repeats the cartridge's
+existing second-slot call for the animal, then processes the leader normally.
+The rectangles remain separate; empty space between players is not collectible.
+Original group bits, rewards, sound and collection animation remain guest-owned,
+so overlapping passes cannot award a banana twice. One transient host record
+holds the scratch backup only within the group and resets on session/load/mode
+change. Frame-boundary saves need no new fields. Classic, solo/contest and
+cases with two or fewer hitboxes retain their original collection path.
+
+Normal death handoff skips state `$27`'s follower movement and enters the
+existing completion block with the survivor's own X/Y. Stock selector swapping,
+invincibility and the recovery jump remain. When simultaneous dispatch resumes
+TEAM wait `$6F`, it now clears turn freeze `$0A36 == 7` and its timer `$0A38`, in
+addition to the existing turn-pause/blink cleanup. Other freeze reasons remain
+untouched. Blank-SRAM acceptance requires the survivor to stay in place and an
+actual enemy to move after handoff, then checks survivor control and saved loss.
+
+The normal Kong horizontal clamp at `$B8:D13D` previously restricted each
+player to camera-relative X `[16,240]` in every aspect. Two operand wrappers
+now extend its left inset and span for simultaneous TEAM Kong slots when the
+terrain renderer confirms a wide scene. They use the current aspect's extra
+columns and presentation bias: left slack is `extra - bias`, right slack is
+`extra + bias`. Slack is capped by the camera's distance to the level's outer
+scroll bounds, so reflected or shifted artwork does not grant access beyond
+the level. The native inset, terrain collision and exits remain; native aspect,
+classic TEAM, solo/contest, non-Kong sprites and unproven wide scenes keep their
+original operands. Aspect changes apply through the existing live video state.
+
+## Windows dropdown and input boundary
+
+`desktop_menu` owns validated command ranges and checkmark state;
+`desktop_menu_settings` projects the shared settings value and launcher-owned
+edge/co-op/upscaler settings. `windows_menu` attaches a dark owner-drawn HMENU
+to either the Win32 HWND or the SDL window's HWND and queues WM_COMMAND IDs for
+host-loop dispatch. It does not mutate guest state from a window callback.
+Quick Save/Load commands use `Dkc2ApplyAssistGate` to bypass only the shortcut
+opt-in, matching the established Mac policy. Menu visibility follows fullscreen;
+unsupported overlay/reconstruction commands are disabled by host capability.
+The same overlay model provides the full visible pause/settings UI on OpenGL
+and GDI. GDI's software-renderer texture resources are recreated after resize.
+
+Win32 maps persisted SDL scancodes directly to virtual keys without depending
+on SDL's initialized keycode table. Keydown edges are retained through one host
+poll, alongside asynchronous held-key state. SDL similarly retains unconsumed
+keydown edges until its next poll. Focus loss and native menu transitions clear
+pending edges, and keys held across a native menu transition must release before
+game input resumes. Start+Back remains consumed until both buttons release.
+These are host input policies; SNES controller words and guest scheduling are
+unchanged. The three supported aspect choices remain 4:3, 16:10 and 16:9.
+
+The MIT-licensed DKC3 menu adaptation and exact source revision are recorded in
+`third_party/dkc3_menu/`, including the original license.
+
+
+## DKC3 display and feedback parity (2026-09-13)
+
+`desktop_reconstruct_shader.h` contains the shared SDL/WGL shader source. The
+native OpenGL presenter loads shader entry points through WGL, compiles once
+per context, binds uniforms for the current viewport and restores the fixed
+pipeline before drawing ImGui. Color LUTs run before scaling on both hosts.
+Menus receive actual compiled-shader capability; GDI retains fixed sampling.
+
+The maximum host framebuffer is 446x224 for 21:9; 256/308/342-wide behavior
+remains separately selected. Desktop and headless buffers allocate the maximum.
+Rumble consumes host-only events from the existing accepted-stomp reaction,
+with per-player routing shared with the sequential input-device assignment.
+XInput motor deadlines are serviced by the host loop; SDL uses timed rumble.
+Focus loss, disabling feedback, disconnect and shutdown stop outstanding pulses.
+
+
+## CRT, optional characters and MSU-1 (2026-09-13)
+
+`desktop_crt` owns the portable settings/model. `desktop_present_sdl` exports
+a GL pipeline with a procedure loader. SDL owns its window/context; native
+WGL owns its own. Both use identical reconstruction and five CRT passes,
+including half-float linear-light targets, beams, blur and mask/curvature.
+`desktop_launcher` persists CRT settings and parses shared environment overrides.
+
+Project Kongs uses an external validated data pack. Build-local PPU callbacks
+substitute compound OAM rendering. Verified instruction hooks adapt moves and
+attachments; generated wrappers bridge the compiled callback paths. Each
+original slot owns its move state so TEAM dispatch cannot cancel its partner's
+attack. Save layout remains unchanged.
+
+`dkc2_msu1` owns mapped PCM and resampling. `dkc2_music` owns host settings,
+SPC command observation and tracks. `dkc2_spc_music` restores the verified
+music-only scheduler policy after load/rewind or live selection. All three
+hosts mix PCM after stock SPC rendering. No shared submodule source is changed.
+
+Optional character instruction callbacks resolve the co-op owner and held
+object using the existing value wrappers. Temporary callback context is
+restored synchronously before any guest execution. The interpreted attachment
+routine receives the same owner register as its generated C counterpart.

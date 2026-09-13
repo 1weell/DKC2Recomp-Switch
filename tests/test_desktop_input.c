@@ -20,6 +20,19 @@ static bool SyntheticKeyPressed(int scancode, void *context) {
 }
 
 int main(void) {
+  bool menu_latched = false;
+  if (Dkc2UpdateMenuChord(kDkc2GamepadStart, &menu_latched) != 0 ||
+      Dkc2UpdateMenuChord(kDkc2GamepadStart | kDkc2GamepadBack, &menu_latched) !=
+          (kDkc2MenuInputToggle | kDkc2MenuInputBlock) ||
+      Dkc2UpdateMenuChord(kDkc2GamepadStart | kDkc2GamepadBack, &menu_latched) !=
+          kDkc2MenuInputBlock ||
+      Dkc2UpdateMenuChord(kDkc2GamepadBack, &menu_latched) != kDkc2MenuInputBlock ||
+      Dkc2UpdateMenuChord(kDkc2GamepadStart, &menu_latched) != kDkc2MenuInputBlock ||
+      Dkc2UpdateMenuChord(0, &menu_latched) != 0 || menu_latched ||
+      Dkc2UpdateMenuChord(kDkc2GamepadBack, &menu_latched) != 0) {
+    (void)fputs("menu chord leaked, repeated, or swallowed standalone Start/Back\n", stderr);
+    return EXIT_FAILURE;
+  }
   ExpectInput("neutral and stick deadzone", 0, 0, 7849, -7849);
   ExpectInput("face buttons", UINT32_C(0x303),
               kDkc2GamepadA | kDkc2GamepadB |
@@ -134,6 +147,15 @@ int main(void) {
     (void)fputs("native Quick State Assist gate policy failed\n", stderr);
     return EXIT_FAILURE;
   }
+
+  const int keyboard_pad[2] = {1, 2}, pads_only[2] = {2, 2}, pad_keyboard[2] = {2, 1};
+  if (Dkc2GamepadIndexForPlayer(keyboard_pad, 0) != -1 ||
+      Dkc2GamepadIndexForPlayer(keyboard_pad, 1) != 0 ||
+      Dkc2GamepadIndexForPlayer(pads_only, 1) != 1 ||
+      Dkc2GamepadIndexForPlayer(pad_keyboard, 0) != 0 ||
+      Dkc2GamepadIndexForPlayer(pad_keyboard, 1) != -1 ||
+      Dkc2GamepadIndexForPlayer(NULL, 0) != -1 ||
+      Dkc2GamepadIndexForPlayer(pads_only, 2) != -1) return EXIT_FAILURE;
 
   (void)puts("Desktop gamepad mapping tests passed");
   return EXIT_SUCCESS;

@@ -1,3 +1,5 @@
+#include "dkc2_kongs.h"
+#include "dkc2_music.h"
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <commdlg.h>
@@ -8,11 +10,15 @@
 #include <SDL.h>
 
 #include "dkc2_game.h"
+#include "dkc2_coop.h"
 #include "dkc2_video.h"
 #include "diagnostics.h"
 #include "desktop_filter.h"
 #include "desktop_fps.h"
 #include "desktop_input.h"
+#include "windows_input.h"
+#include "windows_menu.h"
+#include "desktop_menu_settings.h"
 #include "desktop_launcher.h"
 #include "desktop_overlay.h"
 #include "desktop_paths.h"
@@ -40,7 +46,7 @@
 #endif
 
 enum {
-  kFrameBufferWidth = kDkc2VideoWidescreenWidth,
+  kFrameBufferWidth = kDkc2VideoMaximumWidth,
   kFrameHeight = kDkc2VideoHeight,
   kBytesPerPixel = 4,
   kAudioRate = 32040,
@@ -65,6 +71,10 @@ static Dkc2DesktopPresenter s_presenter;
 static Dkc2DesktopGlPresenter s_gl_presenter;
 static Dkc2DesktopOverlay *s_overlay;
 static HWND s_window;
+static Dkc2WindowsMenu *s_menu;
+static Dkc2WindowsKeys s_key_taps;
+static int ClampInt(int value, int minimum, int maximum);
+static WINDOWPLACEMENT s_windowed_placement = {sizeof(WINDOWPLACEMENT)};
 static bool s_running = true;
 static bool s_test_hidden;
 static bool s_gl_active;
@@ -245,6 +255,13 @@ static void PaintFrame(HWND window) {
     EndPaint(window, &paint);
     return;
   }
+  (void)Dkc2DesktopGlSetUpscaler(&s_gl_presenter, Dkc2LauncherUpscaler(),
+      s_linear_filter, Dkc2LauncherReconstructMode(),
+      Dkc2LauncherReconstructStrength() / 100.0f,
+      Dkc2LauncherReconstructSoftness() / 100.0f,
+      Dkc2LauncherReconstructShading() / 100.0f);
+  (void)Dkc2DesktopGlSetDisplay(&s_gl_presenter, Dkc2LauncherDisplay(),
+                               Dkc2LauncherCrt());
   bool presented = s_gl_active
       ? Dkc2DesktopGlPresent(&s_gl_presenter, &client, present_pixels,
                              frame_width, kFrameHeight, s_linear_filter,
@@ -256,11 +273,59 @@ static void PaintFrame(HWND window) {
   EndPaint(window, &paint);
 }
 
+static bool SetFullscreen(bool fullscreen) {
+  if (fullscreen == (s_fullscreen != 0)) return true;
+  if (fullscreen) {
+    MONITORINFO monitor = {sizeof monitor};
+    if (!GetWindowPlacement(s_window, &s_windowed_placement) ||
+        !GetMonitorInfoW(MonitorFromWindow(s_window, MONITOR_DEFAULTTONEAREST),
+                        &monitor)) return false;
+    Dkc2WindowsMenuSetVisible(s_menu, false);
+    SetWindowLongPtrW(s_window, GWL_STYLE, WS_POPUP | WS_VISIBLE);
+    SetWindowPos(s_window, NULL, monitor.rcMonitor.left, monitor.rcMonitor.top,
+        monitor.rcMonitor.right - monitor.rcMonitor.left,
+        monitor.rcMonitor.bottom - monitor.rcMonitor.top,
+        SWP_NOZORDER | SWP_FRAMECHANGED);
+  } else {
+    SetWindowLongPtrW(s_window, GWL_STYLE, WS_OVERLAPPEDWINDOW | WS_VISIBLE);
+    Dkc2WindowsMenuSetVisible(s_menu, true);
+    SetWindowPlacement(s_window, &s_windowed_placement);
+    SetWindowPos(s_window, NULL, 0, 0, 0, 0,
+        SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED);
+  }
+  s_fullscreen = fullscreen ? 1 : 0;
+  return true;
+}
+
 static LRESULT CALLBACK WindowProcedure(HWND window, UINT message,
                                         WPARAM wparam, LPARAM lparam) {
+  if (message == WM_ENTERMENULOOP || message == WM_EXITMENULOOP ||
+      message == WM_KILLFOCUS)
+    Dkc2WindowsKeysClear(&s_key_taps);
+  if (message == WM_SYSKEYDOWN && wparam == VK_RETURN &&
+      (lparam & (1LL << 29)) && !(lparam & (1LL << 30))) {
+    PostMessageW(window, WM_COMMAND, kDkc2MenuFullscreen, 0);
+    return 0;
+  }
+  if (message == WM_KEYDOWN && wparam == VK_ESCAPE &&
+      !(lparam & (1LL << 30))) {
+    if (s_fullscreen && !Dkc2DesktopOverlayIsOpen(s_overlay)) {
+      PostMessageW(window, WM_COMMAND, kDkc2MenuFullscreen, 0);
+      return 0;
+    }
+
+  }
   if (Dkc2DesktopOverlayProcessWin32Message(
           s_overlay, window, message, (uintptr_t)wparam, (intptr_t)lparam))
     return 0;
+  if (message == WM_KEYDOWN && !(lparam & (1LL << 30)) &&
+      !Dkc2DesktopOverlayIsOpen(s_overlay)) {
+    unsigned key = (unsigned)wparam;
+    if (key == VK_SHIFT)
+      key = ((lparam >> 16) & 0xff) == 0x36 ? VK_RSHIFT : VK_LSHIFT;
+    if (key == VK_CONTROL) key = (lparam & (1LL << 24)) ? VK_RCONTROL : VK_LCONTROL;
+    Dkc2WindowsKeyDown(&s_key_taps, key);
+  }
   switch (message) {
     case WM_PAINT:
       PaintFrame(window);
@@ -274,6 +339,8 @@ static LRESULT CALLBACK WindowProcedure(HWND window, UINT message,
       s_running = false;
       return 0;
     case WM_DESTROY:
+      Dkc2WindowsMenuDestroy(s_menu);
+      s_menu = NULL;
       if (s_recreating_window) return 0;
       s_running = false;
       PostQuitMessage(0);
@@ -353,7 +420,8 @@ static bool CreateGameWindow(void) {
               Dkc2DesktopVsyncStatusName(
                   Dkc2DesktopGlVsyncStatus(&s_gl_presenter)),
               Dkc2DesktopScreenFilterName(s_screen_filter),
-              s_linear_filter ? "bilinear" : "nearest");
+              Dkc2LauncherUpscaler() == 2 && Dkc2DesktopGlReconstructAvailable(&s_gl_presenter)
+                  ? "reconstruct" : (s_linear_filter ? "bilinear" : "nearest"));
     } else {
       fprintf(stderr, "warning: %s; falling back to atomic GDI\n", error);
       if (EnvironmentEnabled("DKC2_DESKTOP_REQUIRE_GPU")) {
@@ -378,84 +446,69 @@ static bool CreateGameWindow(void) {
   }
   if (!s_gl_active)
     fprintf(stdout, "Video: atomic GDI compatibility presenter\n");
+  s_menu = Dkc2WindowsMenuCreate(s_window);
+  if (!s_menu) return false;
+  if (s_fullscreen) {
+    Dkc2WindowsMenuSetVisible(s_menu, false);
+    RECT restore = {100, 100, 100 + width, 100 + height};
+    AdjustWindowRect(&restore, WS_OVERLAPPEDWINDOW, TRUE);
+    s_windowed_placement.showCmd = SW_SHOWNORMAL;
+    s_windowed_placement.rcNormalPosition = restore;
+  }
   ShowWindow(s_window, s_test_hidden ? SW_HIDE : SW_SHOW);
   UpdateWindow(s_window);
   return true;
 }
 
+static DWORD s_haptic_users[2] = {XUSER_MAX_COUNT, XUSER_MAX_COUNT};
+static ULONGLONG s_haptic_deadline[XUSER_MAX_COUNT];
+
+static void StopHaptics(bool all) {
+  ULONGLONG now = GetTickCount64();
+  for (DWORD user = 0; user < XUSER_MAX_COUNT; ++user) {
+    if (s_haptic_deadline[user] && (all || now >= s_haptic_deadline[user])) {
+      XINPUT_VIBRATION off = {0, 0};
+      (void)XInputSetState(user, &off);
+      s_haptic_deadline[user] = 0;
+    }
+  }
+}
+
+static void PulseHaptics(unsigned players, bool test) {
+  if (!Dkc2LauncherHaptics() || GetForegroundWindow() != s_window) return;
+  for (int player = 0; player < 2; ++player) {
+    int index = Dkc2GamepadIndexForPlayer(s_player_source, player);
+    if (!(players & (1u << player)) || index < 0 || s_haptic_users[index] >= XUSER_MAX_COUNT)
+      continue;
+    DWORD user = s_haptic_users[index];
+    XINPUT_VIBRATION pulse = {test ? 0x5000 : 0x2800, test ? 0x7000 : 0x5000};
+    if (XInputSetState(user, &pulse) == ERROR_SUCCESS)
+      s_haptic_deadline[user] = GetTickCount64() + (test ? 500 : 55);
+    else
+      Dkc2DesktopOverlaySetHapticsDevice(s_overlay, player, "Rumble unavailable", false);
+  }
+}
+
 static bool IsPressed(int virtual_key) {
-  return (GetAsyncKeyState(virtual_key) & 0x8000) != 0;
+  return (GetAsyncKeyState(virtual_key) & 0x8000) != 0 ||
+      Dkc2WindowsKeyTapped(&s_key_taps, (unsigned)virtual_key);
 }
 
 static bool IsScancodePressed(int scancode, void *context) {
   (void)context;
-  SDL_Keycode key = SDL_GetKeyFromScancode((SDL_Scancode)scancode);
-  if (key >= SDLK_a && key <= SDLK_z)
-    return IsPressed('A' + (int)(key - SDLK_a));
-  if (key >= SDLK_0 && key <= SDLK_9)
-    return IsPressed('0' + (int)(key - SDLK_0));
-  if (key >= SDLK_F1 && key <= SDLK_F24)
-    return IsPressed(VK_F1 + (int)(key - SDLK_F1));
-  switch (key) {
-    case SDLK_RETURN: return IsPressed(VK_RETURN);
-    case SDLK_ESCAPE: return IsPressed(VK_ESCAPE);
-    case SDLK_BACKSPACE: return IsPressed(VK_BACK);
-    case SDLK_TAB: return IsPressed(VK_TAB);
-    case SDLK_SPACE: return IsPressed(VK_SPACE);
-    case SDLK_UP: return IsPressed(VK_UP);
-    case SDLK_DOWN: return IsPressed(VK_DOWN);
-    case SDLK_LEFT: return IsPressed(VK_LEFT);
-    case SDLK_RIGHT: return IsPressed(VK_RIGHT);
-    case SDLK_LSHIFT: return IsPressed(VK_LSHIFT);
-    case SDLK_RSHIFT: return IsPressed(VK_RSHIFT);
-    case SDLK_LCTRL: return IsPressed(VK_LCONTROL);
-    case SDLK_RCTRL: return IsPressed(VK_RCONTROL);
-    case SDLK_LALT: return IsPressed(VK_LMENU);
-    case SDLK_RALT: return IsPressed(VK_RMENU);
-    case SDLK_INSERT: return IsPressed(VK_INSERT);
-    case SDLK_DELETE: return IsPressed(VK_DELETE);
-    case SDLK_HOME: return IsPressed(VK_HOME);
-    case SDLK_END: return IsPressed(VK_END);
-    case SDLK_PAGEUP: return IsPressed(VK_PRIOR);
-    case SDLK_PAGEDOWN: return IsPressed(VK_NEXT);
-    case SDLK_KP_0: return IsPressed(VK_NUMPAD0);
-    case SDLK_KP_1: return IsPressed(VK_NUMPAD1);
-    case SDLK_KP_2: return IsPressed(VK_NUMPAD2);
-    case SDLK_KP_3: return IsPressed(VK_NUMPAD3);
-    case SDLK_KP_4: return IsPressed(VK_NUMPAD4);
-    case SDLK_KP_5: return IsPressed(VK_NUMPAD5);
-    case SDLK_KP_6: return IsPressed(VK_NUMPAD6);
-    case SDLK_KP_7: return IsPressed(VK_NUMPAD7);
-    case SDLK_KP_8: return IsPressed(VK_NUMPAD8);
-    case SDLK_KP_9: return IsPressed(VK_NUMPAD9);
-    case SDLK_KP_ENTER: return IsPressed(VK_RETURN);
-    case SDLK_KP_MULTIPLY: return IsPressed(VK_MULTIPLY);
-    case SDLK_KP_PLUS: return IsPressed(VK_ADD);
-    case SDLK_KP_MINUS: return IsPressed(VK_SUBTRACT);
-    case SDLK_KP_PERIOD: return IsPressed(VK_DECIMAL);
-    case SDLK_KP_DIVIDE: return IsPressed(VK_DIVIDE);
-    case SDLK_CAPSLOCK: return IsPressed(VK_CAPITAL);
-    case SDLK_SCROLLLOCK: return IsPressed(VK_SCROLL);
-    case SDLK_PRINTSCREEN: return IsPressed(VK_SNAPSHOT);
-    case SDLK_PAUSE: return IsPressed(VK_PAUSE);
-    case SDLK_LGUI: return IsPressed(VK_LWIN);
-    case SDLK_RGUI: return IsPressed(VK_RWIN);
-    default: break;
-  }
-  if (key > 0 && key < 128) {
-    SHORT mapped = VkKeyScanA((CHAR)key);
-    if (mapped != -1) return IsPressed(LOBYTE(mapped));
-  }
-  return false;
+  int key = Dkc2WindowsVirtualKeyFromScancode(scancode);
+  return key != 0 && IsPressed(key);
 }
 
-static DesktopControls ReadControls(void) {
+static DesktopControls ReadControlsImpl(void) {
   DesktopControls controls = {0, 0};
-  if (GetForegroundWindow() != s_window) return controls;
-  if (IsPressed(VK_ESCAPE)) {
-    if (!s_overlay) PostMessageA(s_window, WM_CLOSE, 0, 0);
+  if (GetForegroundWindow() != s_window || Dkc2WindowsMenuBlocksInput(s_menu)) {
+    Dkc2DesktopOverlaySetGamepad(s_overlay, NULL);
+    s_menu_chord_previous = false;
+    s_perf_hotkey_previous = false;
     return controls;
   }
+  if (IsPressed(VK_ESCAPE) || IsPressed(VK_MENU)) return controls;
   bool perf_hotkey = IsPressed('F');
   if (perf_hotkey && !s_perf_hotkey_previous)
     SetPerformanceLogging(!s_perf_enabled);
@@ -471,12 +524,14 @@ static DesktopControls ReadControls(void) {
    * in XInput user order to SNES controller ports 1 and 2. */
   Dkc2GamepadState gamepads[kDkc2DesktopPlayerCount];
   size_t gamepad_count = 0;
+  s_haptic_users[0] = s_haptic_users[1] = XUSER_MAX_COUNT;
   for (DWORD user = 0;
        user < XUSER_MAX_COUNT && gamepad_count < kDkc2DesktopPlayerCount;
        user++) {
     XINPUT_STATE state;
     memset(&state, 0, sizeof state);
     if (XInputGetState(user, &state) != ERROR_SUCCESS) continue;
+    s_haptic_users[gamepad_count] = user;
     Dkc2GamepadState *gamepad = &gamepads[gamepad_count++];
     gamepad->buttons = state.Gamepad.wButtons;
     gamepad->left_x = state.Gamepad.sThumbLX;
@@ -490,6 +545,13 @@ static DesktopControls ReadControls(void) {
     if (state.Gamepad.wButtons & XINPUT_GAMEPAD_RIGHT_THUMB)
       gamepad->buttons |= kDkc2GamepadRightStick;
   }
+  for (int player = 0; player < 2; ++player) {
+    int index = Dkc2GamepadIndexForPlayer(s_player_source, player);
+    bool connected = index >= 0 && s_haptic_users[index] < XUSER_MAX_COUNT;
+    char name[64] = {0};
+    if (connected) (void)snprintf(name, sizeof name, "XInput gamepad %lu", (unsigned long)s_haptic_users[index] + 1);
+    Dkc2DesktopOverlaySetHapticsDevice(s_overlay, player, name, connected);
+  }
   controls.controller = Dkc2RoutePlayerInputsWithBindings(
       keyboard_input, gamepads, gamepad_count, s_player_source,
       s_player_deadzone, s_player_pad_bind);
@@ -499,16 +561,19 @@ static DesktopControls ReadControls(void) {
   uint32_t menu_buttons = gamepad_count ? gamepads[0].buttons : 0;
   Dkc2DesktopOverlaySetGamepad(
       s_overlay, gamepad_count ? &gamepads[0] : NULL);
-  bool menu_chord =
-      (menu_buttons & (kDkc2GamepadStart | kDkc2GamepadBack)) ==
-      (kDkc2GamepadStart | kDkc2GamepadBack);
-  if (menu_chord && !s_menu_chord_previous)
+  uint32_t menu_input = Dkc2UpdateMenuChord(menu_buttons, &s_menu_chord_previous);
+  if (menu_input & kDkc2MenuInputToggle)
     Dkc2DesktopOverlayToggle(s_overlay);
-  s_menu_chord_previous = menu_chord;
-  if (Dkc2DesktopOverlayIsOpen(s_overlay)) {
+  if ((menu_input & kDkc2MenuInputBlock) || Dkc2DesktopOverlayIsOpen(s_overlay)) {
     controls.controller = 0;
     controls.host_actions = 0;
   }
+  return controls;
+}
+
+static DesktopControls ReadControls(void) {
+  DesktopControls controls = ReadControlsImpl();
+  Dkc2WindowsKeysClear(&s_key_taps);
   return controls;
 }
 
@@ -672,6 +737,9 @@ static void ApplyOverlaySettings(RecompLauncherCSettings *settings) {
   if (!settings || !s_overlay) return;
   RecompLauncherCSettings updated;
   Dkc2DesktopOverlayGetSettings(s_overlay, &updated);
+  if ((updated.fullscreen != 0) != (s_fullscreen != 0))
+    (void)SetFullscreen(updated.fullscreen != 0);
+  updated.fullscreen = s_fullscreen;
   updated.volume =
       updated.volume < 0 ? 0 : (updated.volume > 100 ? 100 : updated.volume);
   updated.texture_filter = updated.texture_filter != 0;
@@ -721,6 +789,38 @@ static void ApplyOverlaySettings(RecompLauncherCSettings *settings) {
   *settings = updated;
 }
 
+static uint32_t ApplyMenuCommands(RecompLauncherCSettings *settings) {
+  uint32_t actions = 0;
+  Dkc2DesktopOverlayGetSettings(s_overlay, settings);
+  Dkc2MenuState state = Dkc2MenuReadSettings(settings, s_fullscreen != 0,
+      Dkc2DesktopOverlayIsOpen(s_overlay), true,
+      Dkc2DesktopGlReconstructAvailable(&s_gl_presenter));
+  unsigned command;
+  while ((command = Dkc2WindowsMenuTakeCommand(s_menu)) != 0) {
+    switch (command) {
+      case kDkc2MenuPause: Dkc2DesktopOverlayToggle(s_overlay); break;
+      case kDkc2MenuSettings:
+        if (!Dkc2DesktopOverlayIsOpen(s_overlay))
+          Dkc2DesktopOverlayToggle(s_overlay);
+        break;
+      case kDkc2MenuSave: actions |= kDkc2HostSaveState; break;
+      case kDkc2MenuLoad: actions |= kDkc2HostLoadState; break;
+      case kDkc2MenuFullscreen:
+        if (SetFullscreen(s_fullscreen == 0)) settings->fullscreen = s_fullscreen;
+        break;
+      case kDkc2MenuQuit: s_running = false; break;
+      case kDkc2MenuAbout:
+        MessageBoxA(s_window, "DKC2Recomp " DKC2_RELEASE_VERSION
+            "\nNative PC port foundation.\nRequires your own North American v1.0 ROM.",
+            "About DKC2Recomp", MB_OK | MB_ICONINFORMATION);
+        break;
+      default: (void)Dkc2MenuChangeSettings(settings, &state, command); break;
+    }
+  }
+  Dkc2DesktopOverlaySetSettings(s_overlay, settings);
+  return actions;
+}
+
 static int RunDesktop(const char *rom_path,
                       RecompLauncherCSettings *settings) {
   unsigned long long test_frame_limit = 0;
@@ -734,6 +834,11 @@ static int RunDesktop(const char *rom_path,
               "DKC2_DESKTOP_TEST_FRAMES must be between 1 and 1000000\n");
       return 2;
     }
+  }
+  char crt_error[160];
+  if (!Dkc2LauncherApplyCrtEnvironment(crt_error, sizeof crt_error)) {
+    fprintf(stderr, "%s\n", crt_error);
+    return 2;
   }
   s_test_hidden = EnvironmentEnabled("DKC2_DESKTOP_TEST_HIDDEN");
   bool test_rewind_requested =
@@ -751,7 +856,7 @@ static int RunDesktop(const char *rom_path,
   bool aspect_override_active = aspect_override && *aspect_override;
   if (aspect_override_active &&
       !Dkc2VideoAspectFromName(aspect_override, &aspect)) {
-    fprintf(stderr, "DKC2_ASPECT must be 4:3, 16:10, or 16:9\n");
+    fprintf(stderr, "DKC2_ASPECT must be 4:3, 16:10, 16:9, or 21:9\n");
     return 2;
   }
   const char *widescreen_override = getenv("DKC2_WIDESCREEN");
@@ -774,6 +879,19 @@ static int RunDesktop(const char *rom_path,
         return 2;
       }
       Dkc2VideoSetEdgePolicy(edge_policy);
+    }
+  }
+  Dkc2CoopSetMode((Dkc2CoopMode)Dkc2LauncherCoopMode());
+  {
+    const char *coop_text = getenv("DKC2_COOP");
+    Dkc2CoopMode coop_mode = kDkc2CoopSimultaneous;
+    if (coop_text && *coop_text) {
+      if (!Dkc2CoopModeFromName(coop_text, &coop_mode)) {
+        fprintf(stderr,
+                "DKC2_COOP must be simultaneous or classic\n");
+        return 2;
+      }
+      Dkc2CoopSetMode(coop_mode);
     }
   }
   const char *screen_override = getenv("DKC2_SCREEN");
@@ -799,6 +917,8 @@ static int RunDesktop(const char *rom_path,
    * changing the process working directory cannot invalidate its path. */
   (void)snesrecomp_anchor_to_exe_dir();
 
+  Dkc2KongsInitialize();
+  Dkc2MusicInitialize();
   RtlRegisterGame(Dkc2GameInfo());
   if (!SnesInit(rom, (int)rom_size)) {
     fprintf(stderr, "snesrecomp rejected the verified ROM\n");
@@ -838,8 +958,11 @@ static int RunDesktop(const char *rom_path,
     free(rom);
     return 4;
   }
-  if (s_gl_active) {
-    if (!Dkc2DesktopOverlayInitWin32(s_overlay, s_window)) {
+  {
+    bool overlay_ready = s_gl_active
+        ? Dkc2DesktopOverlayInitWin32(s_overlay, s_window)
+        : Dkc2DesktopOverlayInitWin32Software(s_overlay, s_window);
+    if (!overlay_ready) {
       fprintf(stderr, "unable to initialize the in-game overlay\n");
       Dkc2DesktopOverlayDestroy(s_overlay);
       s_overlay = NULL;
@@ -850,6 +973,14 @@ static int RunDesktop(const char *rom_path,
       return 4;
     }
   }
+  Dkc2DesktopOverlaySetReconstructAvailable(s_overlay,
+      Dkc2DesktopGlReconstructAvailable(&s_gl_presenter));
+  Dkc2DesktopOverlaySetCrtAvailable(s_overlay,
+      Dkc2DesktopGlCrtAvailable(&s_gl_presenter));
+  if (s_gl_active && !Dkc2DesktopGlReconstructAvailable(&s_gl_presenter))
+    fprintf(stderr, "warning: %s\n", Dkc2DesktopGlShaderError(&s_gl_presenter));
+  s_presenter.overlay_draw = Dkc2DesktopOverlayRenderSoftware;
+  s_presenter.overlay_user = s_overlay;
   Dkc2BeginDrawing(
       s_pixels, (size_t)Dkc2VideoWidth() * kBytesPerPixel);
 
@@ -953,14 +1084,16 @@ static int RunDesktop(const char *rom_path,
 
   fprintf(stdout,
           "Controls: gameplay and Assist bindings are configurable in the "
-          "pre-boot launcher. F=Performance log and Escape=Overlay (OpenGL) "
-          "or Quit (GDI fallback). XInput gamepads are detected "
+          "pre-boot launcher. F=Performance log and Escape=Pause menu (OpenGL/GDI). XInput gamepads are detected "
           "automatically.\n");
   while (s_running) {
     if (!PumpMessages()) break;
     Dkc2DiagnosticsHeartbeat(host_frame, Dkc2ResumePc());
     host_report_crash_test_tick();
     uint64_t perf_start = PerformanceBegin();
+    uint32_t platform_host_actions = ApplyMenuCommands(settings);
+    if (!s_running) break;
+    StopHaptics(!Dkc2LauncherHaptics() || GetForegroundWindow() != s_window);
     DesktopControls controls = ReadControls();
     PerformanceEnd(kDkc2PerfInput, perf_start);
     if (test_overlay_requested && !test_overlay_completed &&
@@ -987,6 +1120,13 @@ static int RunDesktop(const char *rom_path,
     if (overlay_actions & kDkc2OverlayActionLoadState)
       controls.host_actions |= kDkc2HostLoadState;
     ApplyOverlaySettings(settings);
+    unsigned haptic_tests = ((overlay_actions & kDkc2OverlayActionTestHapticsP1) ? 1u : 0u) |
+                            ((overlay_actions & kDkc2OverlayActionTestHapticsP2) ? 2u : 0u);
+    PulseHaptics(haptic_tests, true);
+    Dkc2MenuState menu_state = Dkc2MenuReadSettings(settings, s_fullscreen != 0,
+        Dkc2DesktopOverlayIsOpen(s_overlay), true,
+      Dkc2DesktopGlReconstructAvailable(&s_gl_presenter));
+    Dkc2WindowsMenuUpdate(s_menu, &menu_state);
     bool overlay_open = Dkc2DesktopOverlayIsOpen(s_overlay);
     if (overlay_open != previous_overlay_open) {
       ResetAudioQueue();
@@ -996,10 +1136,8 @@ static int RunDesktop(const char *rom_path,
       previous_overlay_open = overlay_open;
     }
     bool assist_tools = Dkc2DesktopOverlayAssistTools(s_overlay);
-    if (!assist_tools)
-      controls.host_actions &=
-          ~(kDkc2HostRewind | kDkc2HostFastForward |
-            kDkc2HostSaveState | kDkc2HostLoadState);
+    controls.host_actions = Dkc2ApplyAssistGate(
+        controls.host_actions, platform_host_actions, assist_tools);
     const uint32_t state_actions =
         controls.host_actions & (kDkc2HostSaveState | kDkc2HostLoadState);
     const uint32_t pressed_state_actions =
@@ -1123,7 +1261,9 @@ static int RunDesktop(const char *rom_path,
          * success flag; runtime health is reported by g_fail and the DKC2 LLE
          * continuation result, as in the headless host. */
         perf_start = PerformanceBegin();
+        (void)Dkc2CoopTakeStompEvents();
         (void)RtlRunFrame(controls.controller);
+        PulseHaptics(Dkc2CoopTakeStompEvents(), false);
         PerformanceEnd(kDkc2PerfEmulation, perf_start);
         if (g_fail || !Dkc2LastLleResult()) {
           char message[160];
@@ -1169,6 +1309,7 @@ static int RunDesktop(const char *rom_path,
         int audio_frames = (int)audio_fraction;
         audio_fraction -= audio_frames;
         RtlRenderAudio(frame_audio, audio_frames, kAudioChannels);
+        Dkc2MusicMix(frame_audio, audio_frames, 32040);
         if (mode == kDesktopSpeedNormal && s_audio.available &&
             !AppendAudio(frame_audio, (size_t)audio_frames)) {
           fprintf(stderr,
@@ -1272,6 +1413,7 @@ static int RunDesktop(const char *rom_path,
   ShutdownAudio();
   SetPerformanceLogging(false);
   (void)timeEndPeriod(1);
+  StopHaptics(true);
   Dkc2DesktopOverlayDestroy(s_overlay);
   s_overlay = NULL;
   Dkc2DesktopGlPresenterDestroy(&s_gl_presenter);

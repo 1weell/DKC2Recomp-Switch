@@ -18,6 +18,9 @@ Dkc2DesktopOverlay *Dkc2DesktopOverlayCreate(
     const RecompLauncherCSettings *settings);
 bool Dkc2DesktopOverlayInitSdl(Dkc2DesktopOverlay *overlay, void *window,
                                void *gl_context);
+void Dkc2DesktopOverlaySetHapticsDevice(Dkc2DesktopOverlay *overlay, int player, const char *name, bool supported);
+void Dkc2DesktopOverlaySetReconstructAvailable(Dkc2DesktopOverlay *overlay, bool available);
+void Dkc2DesktopOverlaySetCrtAvailable(Dkc2DesktopOverlay *overlay, bool available);
 bool Dkc2DesktopOverlayInitWin32(Dkc2DesktopOverlay *overlay, void *window);
 void Dkc2DesktopOverlayDestroy(Dkc2DesktopOverlay *overlay);
 
@@ -45,6 +48,9 @@ void Dkc2DesktopOverlaySetStatus(Dkc2DesktopOverlay *overlay,
 /* Called by a presenter after drawing the game and before swapping buffers.
  * The presenter must have its OpenGL context current. */
 void Dkc2DesktopOverlayRenderOpenGl(void *overlay, int width, int height);
+bool Dkc2DesktopOverlayInitWin32Software(Dkc2DesktopOverlay *overlay, void *window);
+bool Dkc2DesktopOverlayRenderSoftware(void *overlay, uint8_t *pixels,
+                                      int width, int height);
 
 #ifdef __cplusplus
 }

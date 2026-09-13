@@ -89,9 +89,32 @@
       optimization, and optional private executable-icon packaging.
 - [x] Expose Player 2 in the shared ImGui launcher and route independently
       selected keyboard/XInput sources into both SNES controller ports.
+- [x] Add simultaneous two-player co-op for the game's "2 PLAYER TEAM" mode
+      through a source-owned generated-code adapter, with the classic
+      alternating behavior preserved as a launcher/overlay/env-selectable
+      policy that is byte-for-byte stock outside TEAM mode.
+- [x] Keep TEAM Player 2 controllable after landing and cover a new TEAM game
+      with separate/concurrent input replay and a classic-policy comparison.
+- [x] Render the full Escape ImGui menu on the GDI compatibility backend.
+- [x] Enable TEAM follower combat and normal colors; verify P2 roll kills,
+      stomp ownership/bounce, contact damage and P1 attacks in the first level.
+- [x] Match co-op movement limits to 4:3, 16:10 and 16:9 presentation,
+      with both Kong roles and level-edge policies covered by private replay.
+- [ ] Complete physical two-player and full-game co-op death/respawn coverage.
+- [x] Verify both players mounting Rambi, separate on-foot controls, riding,
+      dismount/remount and saved ownership from the reported ledges snapshot.
+- [x] Include the on-foot player in banana collection while an animal is ridden;
+      verify both roles, saved pickups and overlapping hitboxes in Pirate Panic.
+- [x] Preserve the survivor's position through death handoff and verify that
+      enemy simulation resumes alongside Player 2 control.
+- [x] Verify post-kill movement, DK/regular barrel ownership and release height,
+      leader-swap collisions, saved loss, DK-barrel revival and repeat damage
+      through bounded Pirate Panic controller replays.
 - [x] Add an OpenGL presenter with atomic-GDI fallback, nearest/bilinear
       scaling, and opt-in PSXRecomp-derived CRT screen-color models while
       retaining Raw as the verified default.
+- [x] Gate the shared pause menu's Reconstruct controls by actual host support;
+      preserve saved SDL shader preferences while showing Win32's effective sampler.
 - [x] Add an SDL2 gameplay host and Python generation entry point that compile
       from the same source on Windows, Linux, and macOS; verify the complete
       portable host lifecycle on Windows without removing the Win32 host.
@@ -128,6 +151,10 @@
       macOS now uses `~/Library/Application Support/Flat2VR/DKC2Recomp`.
 
 Exit criterion: reach and render the title screen with correct audio and input.
+
+- [x] Add native Windows Game/View/Input dropdowns to both desktop hosts,
+      live settings/fullscreen, menu Quick State actions and launcher-independent
+      keyboard mapping with short-tap and menu-chord handling.
 
 ## Milestone 3 — First level
 
@@ -389,5 +416,25 @@ Exit criterion: reach and render the title screen with correct audio and input.
       The first present-only enhancement (CRT screen-color modelling) is
       isolated behind an opt-in Raw-by-default setting. Experimental
       widescreen is now also opt-in and remains incomplete outside its audited
-      screen policies; geometric CRT shaders and asset replacement remain
-      future work.
+      screen policies; CRT television and optional character packs now exist; their full-game
+      and cross-platform acceptance remains open.
+
+
+## DKC3 display/controller parity
+
+- [x] Verify Raw/CRT/Composite/Trinitron preset parity and composition with scaling.
+- [x] Port Reconstruct to the native Windows OpenGL presenter with all five
+      levels, edge strength, softness and smooth shading controls.
+- [x] Add 21:9 geometry, menu/launcher selection and both-player movement checks.
+- [x] Add per-player stomp rumble, persistent enablement and test pulses.
+- [ ] Complete physical-rumble and full-game 21:9 play acceptance.
+
+
+## Host feature completion (2026-09-13)
+
+- [x] Full CRT presets, masks and sliders on Windows WGL and SDL.
+- [x] Donkey/Kiddy menus, external packs and independent TEAM move state.
+- [x] MSU-1 folder, enablement, volume, SFX and missing-track fallback.
+- [ ] Full-game replacement-character and audio-transition coverage.
+- [ ] Exact PCM positions across save/rewind and seamless soundtrack switching.
+- [ ] macOS/Linux builds of the combined milestone and physical audio/rumble acceptance.

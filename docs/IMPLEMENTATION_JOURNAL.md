@@ -5255,3 +5255,533 @@ Extraction into a clean temporary directory preserved both the version and
 the signature, and the extracted executable was byte-identical to the
 packaged build. The configured macOS suite passed 50/50 and the 44-state
 Quick Save corpus ran with no failures immediately before packaging.
+
+## 2026-09-12 - Simultaneous two-player co-op
+
+The cartridge's "2 PLAYER TEAM" mode alternates: the input dispatch at
+`$80:8A00` fills one global "active" input word each frame from exactly
+one controller chosen by the active-Kong selector `$08A2`, and the Kong
+action gate (`$B8:B9C7`, in generated function `CODE_B8BAA8`) lets only
+the active Kong (`$0593`) read it. The other Kong follows by AI, and a
+human waits for a hit, a thrown-partner landing, or a DK barrel to get
+control back. Both disassemblies agree on this design; the p4plus2 and
+Yoshifanatic1 references were used read-only.
+
+The new simultaneous policy makes TEAM mode truly two-player: the Kong
+in slot `$0DE2` reads controller 1 and the Kong in slot `$0E40` reads
+controller 2, every frame, in any shared action state. The patch is two
+expression wraps in the generated gate, applied by the new source-owned
+`scripts/apply_dkc2_coop_overrides.py` immediately after the widescreen
+adapter in both generators:
+
+- the gate compare's `$0593` read is wrapped with
+  `Dkc2CoopGateActiveValue`, which substitutes `current_sprite` under the
+  simultaneous policy, so both Kong slots take the input path (the
+  fall-through CLC path for screen fades is untouched); and
+- the input path's `$050E`/`$0510` reads are wrapped with
+  `Dkc2CoopSelectHeldWord`/`Dkc2CoopSelectPressedWord`, which substitute
+  the per-controller words (`$0502`/`$0504` held, `$0506`/`$0508`
+  pressed) keyed by Kong slot. That binding is the cartridge's own:
+  `set_active_kong` (`$80:883B`) ties slot `$0DE2` to controller 1 and
+  slot `$0E40` to controller 2.
+
+Hurt, death, barrel-respawn, and swap machinery are deliberately stock:
+every one of those paths is slot-consistent, so a respawned Kong re-enters
+its own slot and therefore its own player's controller, and the classic
+"control passes on hit" flip still only retargets the camera. 1 PLAYER and
+2 PLAYER CONTEST are never altered, the classic policy returns cartridge
+values byte-for-byte, and attract-mode input (demos inject the active
+words directly) is untouched because the wraps only change the gate.
+
+The runtime policy lives in `runner/dkc2_coop.{c,h}` beside the video
+adapter. It defaults to simultaneous, is persisted as `CoopMode` in
+`launcher.cfg` (the `WidescreenEdge` pattern, no shared-launcher ABI
+change), is switchable live in the overlay's Settings page ("2P Team
+mode"), and has a process-local `DKC2_COOP=simultaneous|classic`
+diagnostic override accepted by the Win32, SDL, and headless hosts.
+
+Anchors are instruction-shape based (the `current_sprite` direct-page
+read feeding the `$0593` compare with its `Z`-flag branch; the
+`$0981`/`$0983` stores after the word loads), with exactly-one-match
+counts across the whole generated tree and idempotent re-application, so
+revision-dependent PC drift fails closed at regeneration instead of
+guessing. `tests/test_dkc2_coop_emitter_contract.py` drives the pinned v2
+emitter on a gate-shaped synthetic ROM and runs the real output through
+the adapter, so an emitter idiom change is caught source-only.
+
+Verified here (2026-09-12, private ROM available): the adapter applies to the
+real v1.0 Python-backend generation (3,323 roots / 3,474 exact variants) and
+is idempotent there. The real v1.0 gate lives inside
+`process_player_action_M0X0` at trace label `L_B8F3` — one byte and one whole
+function boundary away from both reference disassemblies — which vindicates
+the instruction-shape anchors: PC-based labels would have failed closed on
+the owner's very first regeneration.
+
+Real 2P TEAM validation followed. A crafted 2 KiB SRAM image
+(`file_signature = $0152`, TEAM, zero payload, zero checksums — the
+`validate_save_file` algorithm was rebuilt from the reference) boots straight
+into TEAM mode via `DKC2_SRAM_INPUT`, and a 4,122-frame deterministic input
+route walks title → player select → map → Pirate Panic. The route's three
+control windows, replayed under both policies with the `DKC2_COOP_TRACE`
+WRAM probe, prove simultaneous control:
+
+```text
+DKC2_COOP=simultaneous
+  W1 P1 Right+B:  slot A x 304->691   slot B x 304->304 state $13 (idle)
+  W2 P2 Right+B:  slot A x 707->707   slot B x 660->679 state $13->$00->$2A
+  W3 both Right+B: slot A x 708->877  slot B x 679->851 (both at once)
+DKC2_COOP=classic (identical recording)
+  every window:   slot A responds to P1 only; slot B x 304->304 state $13
+```
+
+The decisive find on real hardware: the follower never reaches the input
+gate — it lives in behavior-script states (level start is state `$13`) that
+bypass the gate entirely, so gate-only patching admits nobody. The policy
+therefore also nudges: when the follower's own controller presses while it
+sits in its passive wait state, the helper transitions its sprite to the
+idle input state (`$2E <- $00`), and from the next frame the opened gate
+feeds it its own controller's words. Scripted states (hurt `$59`, barrel
+`$3E`, carried `$18`) are never redirected. The cartridge's follower
+catch-up teleport still rejoins a separated Kong to the leader.
+
+Known limitation: the dispatch's `$0B02` bit-$10 active-word remap (the
+level-end forced-walk input neutralization) applies to the single active
+word, which the simultaneous policy bypasses by reading the raw
+per-controller words; during the short scripted outro both pads therefore
+stay live where stock neutralizes one. The forced walk itself is driven by
+`$091B`, not the gate, so the outro choreography is unchanged.
+
+Environment note from the visible launch: on this workstation's Parsec
+virtual display, the default OpenGL presenter hangs its swap wait
+(`wglSwapIntervalEXT(1)` never completes without a real vsync), leaving a
+black window and a stalled loop; the hidden smoke tests are unaffected
+because they deliberately request no swap interval. `DKC2_DESKTOP_FORCE_GDI=1`
+(or the launcher Renderer setting) presents normally at 60 FPS with the
+title screen rendering correctly.
+
+## 2026-09-13 - Windows dropdowns, GDI ImGui, and TEAM control retention
+
+Added the DKC3-style dark Game/View/Input menu to the Win32 and Windows SDL
+hosts, with MIT provenance under third_party/dkc3_menu. Commands are queued
+from the native callback and applied by the host loop. Display, player-source
+and co-op choices persist through the shared launcher settings. Quick Save/Load
+work with Assist shortcuts off. Fullscreen hides/restores the menu bar.
+
+The reported missing Escape menu reproduced with Renderer=0 (GDI): the old
+host had no renderer for ImGui on that path. The GDI presenter now exposes a
+32-bit top-down offscreen DIB, flushes completed GDI drawing, composites ImGui
+with the bundled SDLRenderer2 software backend, and presents with one BitBlt.
+The software surface/renderer and textures follow window resize. A visible
+GDI launch showed the full Escape menu and accepted a click into Controls.
+
+Win32 scancode-to-VK mapping no longer depends on SDL's keycode table surviving
+launcher shutdown. Both hosts retain short keydown edges through one poll.
+Native menu/focus transitions clear pending input; held menu keys must release
+before gameplay resumes. Start+Back remains consumed through partial release.
+A visible recorded Enter reached the guest Start bit and advanced the game.
+Native Quick Save with AssistTools=0 wrote a private Slot 1 snapshot.
+
+The previous TEAM validation above was insufficient: the old new-game route's
+Down input could land on file selection before the TEAM selector. The new
+check_coop_route.py waits through each screen and asserts TEAM mode plus
+in-level state before measuring movement. It starts with blank SRAM, requires
+no saved-state seed, and writes all temporary input/WRAM traces outside Git.
+This is private-ROM runtime evidence, not a physical-controller playtest.
+
+That route reproduced a second issue: after joining, P2 landed in state $22
+and replayed the leader's coordinates instead of retaining its own input.
+The supported ROM's $B8:A095 handler calls $D8B6, which copies position history
+from $7FA532/$7FA572. Dkc2CoopSelectStateWord now intercepts the state read in
+kong_state_handler, before follower execution: waiting state $13 joins on its
+player's input, and follow-history state $22 becomes normal player control
+including on neutral input. The active-input gate is now read-only. Other
+states retain their handlers. The dispatcher sets DB=$B8, so policy WRAM reads
+use bank $00. Existing nested private gate/input wrappers were normalized to
+single calls; the adapter now rejects duplicate or misplaced existing calls.
+
+Fresh 3,518-frame TEAM replays: P1-only moved slot A x304->557 while B stayed
+x304; P2-only moved B x540->756 while A stayed x583, including continued
+movement after landing; both then moved A x583->837 and B x753->976. Classic
+mode kept the inactive B slot at x304 on the same input route. These are
+bounded opening-level checks; they do not establish complete death/respawn,
+animal, bonus, end-of-level or full-game behavior. The camera remains shared.
+
+Validation: Release builds succeeded for Win32, SDL and headless. Baseline
+had 61 tests; the PowerShell packaging test initially lacked Get-FileHash due
+to inherited PSModulePath. Prepending the Windows PowerShell system module
+path fixed the test environment. The final 66-test suite passed, including
+native menu structure/commands/checkmarks, keyboard lifecycle and short taps,
+software/GDI composition, visible-overlay smoke, co-op unit/emitter contracts,
+and classic/simultaneous private replay. Logs: build/menu-coop-final-build.log
+and build/menu-coop-final-tests.log. Private live artifacts are under the
+external temporary DKC2-menu-20260913 directory. No ROM, save, game capture or
+generated game binary was added to Git. Physical gamepad and non-Windows
+acceptance, plus complete co-op gameplay coverage, remain unverified.
+
+Final visible acceptance also confirmed Alt+Enter entering fullscreen, Escape restoring the window/menu bar, and Escape reopening ImGui after the resize. The rebuilt Release executable was reopened from build/Release for the user.
+
+## 2026-09-13 - TEAM second-player combat and follower colors
+
+The owner's report reproduced after the movement repair: Player 2 could move
+but could not damage enemies and retained the dim follower palette. A fresh
+baseline complete suite passed 66/66 tests (`build/coop-combat-baseline-tests.log`),
+showing that movement-only acceptance did not cover combat.
+
+Private observation of the supported ROM identified independent follower
+restrictions. The inactive sprite kept interaction mask zero at `+$30` and
+render order `$D8` at `+$02`; `get_active_kong_clipping` skipped its normal
+action states. The source-owned policy now promotes only an ordinary inactive
+Kong's zero mask to `$1E` and back order to `$E4`, preserving nonzero masks
+and special action states. The generation adapter redirects follower clipping
+to the game's existing separate hitbox path at `$BC:FB2C`, preserving the
+caller's guest return frame.
+
+The initial stomp replay exposed a second bug: the enemy died, but the active
+leader entered bounce state `$16` while the attacking second player stayed
+in jump state `$06`. At accepted reaction queue time, `$0A84` identifies the
+enemy and `$6A` identifies the colliding Kong. The policy records both then,
+replaces the record when a higher-priority reaction is accepted, and consumes
+it once in the stomp reaction to select the correct stock Kong metadata.
+This avoids using a collision pointer that later enemy checks can overwrite.
+
+The normal palette selector at `$BB:8B66` adds `$1E` bytes to choose a dim
+follower palette. A narrow immediate-value wrapper suppresses that offset
+only in simultaneous TEAM. Status-effect branches remain in place. A fresh
+private capture visibly confirmed bright Dixie colors, and the replay checker
+compares all 15 nontransparent colors of each Kong against the normal palette
+in the external ROM. No palette bytes were copied into source.
+
+`scripts/check_coop_combat.py` reuses blank-SRAM TEAM navigation and adds four
+source-owned input recipes. P2 roll defeats the first enemy at frame 3450;
+P2 stomp defeats it at 3456, puts P2 in bounce state and moves P2 upward while
+P1 remains grounded over 100 pixels away. Ordinary P2 contact enters the hurt
+path at frame 3456 with its collision mask disabled, the enemy alive and P1
+unaffected. P1's own roll still defeats the enemy at frame 3304. The original
+binary failed the P2 roll case on the identical input recipe. Diagnostics are
+observation-only; `DKC2_COOP_TRACE_SPRITES` adds sprite state and Kong CGRAM
+colors to private traces. Temporary replay and trace files stay outside Git.
+
+Synthetic policy and real-emitter adapter contracts cover the new hooks,
+idempotence, missing/ambiguous anchors, preserved special masks, classic/solo/
+contest palette behavior, queued stomp ownership and reaction replacement.
+The complete Release build succeeded for headless and both Windows hosts.
+The final complete suite passed 67/67 tests in 51.40 seconds, including the
+new private combat test and prior classic/simultaneous movement and GDI ImGui
+checks. Logs: `build/coop-combat-final-build.log`,
+`build/coop-combat-final-tests.log`, and `build/coop-combat-route.log`.
+
+The rebuilt `build/Release/DKC2Recomp.exe` was launched visibly and Escape
+opened the full ImGui pause menu. Existing keyboard-P1/gamepad-P2 settings
+were retained. No ROM, save, screenshot or generated game binary was added to
+Git. Physical gamepad acceptance, full-game enemies/bosses, carry/barrel
+interactions and complete death/respawn behavior remain unverified. Palette
+changes after a live policy switch take effect on the game's next palette
+refresh.
+
+## 2026-09-13 - TEAM barrel ownership, recovery and saved damage lifecycle
+
+The owner reported barrels launching from P1, P2 locking after enemy kills,
+and a saved ledges scene with intangible combat and hurt Kongs returning to
+play. Baseline complete Release suite: 67/67 passed in 32.92 seconds
+(`build/coop-barrel-baseline-tests.log`), exposing missing lifecycle coverage.
+
+Private before/after replays showed roll-stop `$04` and stomp-bounce `$16`
+remaining set because `CODE_B9D705` skips state clearing for the follower.
+The source-owned adapter wraps only its entry follower compare; controlled
+Kongs finish the cartridge's ordinary recovery in those states and throw
+finish `$3F`. The later compare distinguishing a carried Kong stays stock.
+P2 can now walk more than 150 pixels back and jump after either first-enemy kill.
+
+The accepted pickup store records the object's slot/id and actual Kong.
+Attachment and four animation command owner reads use this ownership; carrying
+guest states reconstruct it after loading, and the other player's idle recovery
+does not adopt the global held object. A regular barrel test at different
+platform heights exposed a separate release teleport: `CODE_B8D4AE` swept from
+P1 and clamped the object back to P1. All five owner reads in that named terrain
+sweep now consult the thrower. Private tests cover DK throws left/right and
+regular throws across heights, plus control after release. The adapter checks
+exact counts, rejects ambiguity and avoids rewriting unchanged generated units.
+
+The owner's slot 0 hash was
+`5cd521b68ff3daaca043c4e7624c1bd8ca211cd072f580a438ef303e3ff51ee3`.
+P2 was the active Kong there; P1 retained follower mask `$06`. Idle promotion
+now handles that exact mask as well as zero, preserving invincibility masks.
+Both controller roles pass contact and roll-kill replays from this snapshot.
+The save itself and all trace/ROM data remain outside Git.
+
+Initial join-on-input also revived Kongs after hurt/runaway `$24/$25` reached
+waiting `$13`. A two-bit loss mask now blocks that until an accepted DK-barrel
+rescue `$3E`. It records ordinary death `$05` and animal death `$59` too, although
+full animal behavior is not accepted by these tests. Two bytes of original
+zeroed host-snapshot tail padding preserve marker/loss metadata without changing
+legacy field offsets or total size. Legacy absent waiting states that already
+left the initial follower order are treated as lost; original dormant legacy
+states remain ambiguous. Transient interaction/pickup history is cleared on load.
+TEAM's survivor wait `$6F` resumes its existing jump and damage grace period,
+clearing the turn pause and wait blink. Joined players set the cartridge's
+presence bit so a DK barrel cannot rescue an already present P2.
+
+Validation: full Win32/SDL/headless Release build succeeded; all 69 configured
+tests passed in 52.88 seconds (`build/coop-barrel-final-build.log`,
+`build/coop-barrel-final-tests.log`). Four additional controller replays from
+the exact owner snapshot passed (`build/coop-user-slot0-check.log`). New barrel
+and lifecycle CTests cover saved loss, held inputs, DK revival and repeat loss;
+synthetic tests cover mode guards, recovery states, restored ownership,
+loss persistence and the real emitter's adapter contract.
+
+The original slot remains unchanged and keyboard P1/gamepad P2 settings are
+retained. Full-game, bosses, animal mounts, all throwable types and physical
+gamepad acceptance remain unverified; these are bounded Pirate Panic checks.
+
+Visible acceptance: the rebuilt `build/Release/DKC2Recomp.exe` (11:00:55 build)
+launched, the Game dropdown loaded the unchanged owner slot through Quick Load
+with Assist disabled, and Escape displayed the full ImGui pause menu over the
+restored ledges scene. The game was left paused at that save for the owner.
+
+
+## 2026-09-13: Animal mounting, death handoff and widescreen movement
+
+Reproduced the animal problem from the external quick slot with SHA-256
+`3f5a2b019b68fef226fd7b994ab31a566e7b9aec5e33a7a46a1ba01e6fb21307`.
+The mount collision started with only the leader. Simply admitting the other
+collider was insufficient when a stationary partner masked a valid landing.
+The adapter now uses the existing two-Kong collision path for an eligible
+follower, checks that collider's mount state, and records the accepted mount's
+source/owner. The rider becomes camera leader while retaining its controller.
+Named Kong movement/reaction/animation operands give the on-foot partner normal
+physics. Barrel callers of the shared state-flags helper remain unchanged.
+Stock animal lifecycle and saved guest selectors own mounting/dismounting;
+only accepted-mount attribution is transient and resets on load.
+
+The death report reproduced a turn-freeze leak: skipping TEAM wait $6F left
+$0A36 == 7 active. Clearing that specific freeze and timer resumes actual
+enemies. State $27 now skips follower repositioning and completes handoff at
+the survivor's existing X/Y, retaining stock invincibility and recovery jump.
+The older ledges route now lets the survivor break the animal crate and land
+on Rambi. Its acceptance recognizes that valid mounted state while still
+requiring subsequent movement/jumping and a resumed world.
+
+The widescreen report reproduced identical movement limits at every aspect:
+the Kong clamp retained camera-relative X [16,240] despite rendered margins.
+Its two operands now use confirmed terrain width and presentation bias for
+simultaneous TEAM Kongs. Centered 16:10/16:9 gain 26/43 playable columns per side.
+Shifted views allocate that reach on the appropriate side. Slack is capped by
+outer level scroll limits, preserving the native inset. Classic, solo/contest,
+non-Kong and unavailable-terrain paths remain stock.
+
+Validation: baseline full suite 69/69 passed. After the complete Win32, SDL and
+headless Release build, all 72 configured checks passed in 50.81 seconds
+(build/coop-final-build.log, build/coop-final-tests.log). Added blank-SRAM
+supplied_rom_coop_handoff and optional supplied_rom_coop_animals /
+supplied_rom_coop_widescreen, enabled by external DKC2_COOP_ANIMAL_STATE.
+Both riders pass mounted save/load, on-foot partner controls, riding/jumping,
+dismount/remount and P1-to-P2 exchange. Both slots reach both edges in all three
+aspects; Glide/Shift/Bars/Reflect entrance checks preserve the west wall.
+Synthetic policy and real-emitter tests cover guards, ownership, freeze reasons
+and operand placement. Four additional replays from the earlier combat save
+passed (build/coop-old-ledges-regression.log). Additional shared-state barrel
+guards passed the rebuilt C policy test after the full suite.
+
+Coverage remains bounded to these Pirate Panic routes. Other animal types,
+transformations, animal damage handoffs, full-game/boss behavior and physical
+gamepad acceptance remain unverified. ROM, private states and traces remain
+outside Git. The original quick-slot hash and keyboard-P1/gamepad-P2 settings
+are preserved.
+
+Visible acceptance: the rebuilt desktop executable launched, Game > Quick Load
+State restored the unchanged Slot 1 in 16:9, and Escape opened the full ImGui
+pause menu. The game is left paused at the owner's saved spot with keyboard P1
+and gamepad P2 retained.
+
+
+## 2026-09-13: Mounted TEAM banana collection
+
+The owner reported Player 2 missing bananas in the mounted ledges scene.
+Preserved the newer external slot with SHA-256
+`4123ce28e54f2eaf7cda66e14374d530bf845b605550f5797d091bd66682e421`.
+Baseline complete suite passed 72/72 in 166.20 seconds
+(`build/coop-bananas-baseline-tests.log`). The real replay exposed the
+collector's two-rectangle limit: leader and animal occupied both slots,
+excluding the independently controlled follower. With P2 riding in this save,
+P1's jump through the trail kept the count at 30 before the fix.
+
+The source-owned adapter wraps the second-width read in `bank_B5_F776` and
+its completed-call continuation. The policy temporarily uses the second
+scratch rectangle for the omitted follower, restores the original rectangle,
+and repeats the same guest call before leader processing. It preserves
+separate geometry, guest return frames and original collection-bit/reward
+handling. A transient four-word backup is consumed within each group, with
+no new save fields. Mode, presence and saved-loss guards preserve stock paths.
+
+Private acceptance now observes P1 on foot collecting 30 -> 38 while P2 rides;
+a controller-driven rider exchange and fresh-process load proves P2 on foot
+collecting 30 -> 35. The rider reaches 43 both on the original trail and after
+revisiting P1's collected bananas, proving no double awards for overlap or
+load. Dismounted collection and idle separation also pass. Synthetic policy
+tests cover scratch restoration, both slots, lost/absent colliders and mode
+guards. Synthetic-emitter and missing-anchor tests cover the generated hooks.
+
+
+The unchanged classic TEAM replay produced identical full-WRAM SHA-256
+`6509aeb0f523b4696d390a9fce5d3bad3366f8b814e7f5762f42112275223c45`
+before and after the banana adaptation. The owner's quick slot remained
+unchanged throughout private testing.
+
+## 2026-09-13: Reconstruct host mismatch investigation
+
+At the owner's explicit request, a subagent inspected reconstruction mode.
+The shader exists only in `desktop_present_sdl.c`; native GDI/OpenGL never
+consume its settings. The shared pause Settings page nevertheless offered
+Reconstruct and its sliders. The live native game saved `Renderer=0` and
+`Upscaler=2` on normal close, confirming a request the host could not apply.
+
+The overlay now gates shader selection by host capability, shows the effective
+nearest/bilinear sampler and points to `DKC2RecompSDL.exe`. It preserves the
+saved Reconstruct preference until the user explicitly selects another mode.
+The pre-boot launcher and native dropdown already expose only implemented
+capabilities. A portable model helper and synthetic tests cover truthful
+fallback display and preserved SDL selection. No native shader port or
+renderer change was made in this bounded repair.
+
+The subagent's isolated SDL frame-300 comparison produced identical raw guest
+PPM SHA-256 `53f19481e7f67ef55dcb9c7c1b770d7699ff4d76227851c9111adbcd7d862b7c`
+with Nearest and Reconstruct. The presented 1281x720 images differed at 37,850
+pixels and Reconstruct added 7,995 blended colors; both processes exited 0 on
+NVIDIA OpenGL 4.6. This proves shader application, independent of animation.
+Evidence remains in the private DKC2-reconstruct temporary directory. It is
+boot-image evidence: the SDL test-load-state hook is Mac-guarded and ignored
+on Windows, so the supplied gameplay save was not used for this GPU comparison.
+No live renderer/config/save was changed by the subagent.
+
+Combined final validation rebuilt the Win32, SDL and headless Release targets
+successfully (`build/coop-bananas-final-build.log`). The complete available
+suite passed 73/73 in 168.13 seconds, including the new private banana replay
+and existing animal, combat, handoff and widescreen regressions
+(`build/coop-bananas-final-tests.log`). The rebuilt native executable launched,
+loaded the owner's Slot 1 through the Game dropdown, and opened the full pause
+overlay with Escape. Visible Settings verification showed the effective
+Nearest sampler, disabled Reconstruct entry, and SDL explanation. The game
+was left paused at the supplied scene; the quick-slot hash and saved
+`Upscaler=2` preference remained unchanged. Physical gamepad play and other
+animal/level banana cases were not verified by this milestone.
+
+## 2026-09-13: DKC3 display and controller parity
+
+Compared DKC3 revision `3a033f19801a2bd3abf784d4b29c4462495d19de`
+against DKC2's desktop hosts. The screen LUT and SDL reconstruction shader
+were already equivalent after project-name normalization. All source CRT
+choices are Raw, CRT, Composite and Trinitron color responses; DKC3 has no
+additional scanline, curvature or bloom controls. The full option inventory
+and remaining platform limits are in `DKC3_FEATURE_PARITY.md`; MIT provenance
+and local adaptations are recorded under `third_party/dkc3_menu/`.
+
+Native Windows OpenGL now compiles the existing reconstruction shader from
+a header shared with SDL. The presenter applies all five modes and the
+strength, softness and smooth-shading controls. Both menu systems expose
+actual compiled capability; GDI retains its truthful fallback and preserves
+the saved shader preference. Live inspection caught an accidental reset of
+the extra preferences in overlay creation; that reset was removed, leaving
+it only in the explicit Restore All Settings action. A private integration
+check exercises pause and two launches of isolated WGL/GDI/SDL copies with
+non-default settings, including disabled rumble and classic co-op.
+
+Added 21:9 as 446 source columns with 95 pixels per side, within the signed
+9-bit sprite-coordinate budget. Frame allocations, menus and launcher bounds
+use the larger maximum. Synthetic and private replay checks cover both
+players at both edges in all four aspects. The owner's mounted Pirate Panic
+snapshot also passed a 21:9 scene check with zero center/edge mismatch and
+zero warnings; one scene is not full-game ultrawide validation.
+
+Added persistent stomp rumble and per-player test pulses through XInput and
+SDL. Accepted DKC2 stomp reactions emit a consumable host-only owner mask;
+no DKC3 WRAM addresses are used and no guest/save layout changes are needed.
+Keyboard P1/gamepad P2 routes the first connected pad to P2. Host focus,
+disablement and shutdown stop pulses. Synthetic tests check routing and
+event consumption; the private combat replay verifies P2-only stomp feedback
+and no rolling/jump-only feedback. Physical motor sensation remains unverified.
+
+The baseline full suite passed 73/73 in 167.82 seconds. New GPU validation
+compares 40 WGL/SDL combinations using synthetic dithers, slopes and gradients,
+including every color model, reconstruction mode and tuning endpoint. All
+passed on NVIDIA OpenGL 4.6.0 / 616.56; a few default-framebuffer versus FBO
+channels differ by one 8-bit rounding step, below the explicit 0.1% tolerance.
+Independent tuning endpoints must change output. The Windows SDL test-load
+hook now loads the supplied gameplay snapshot; an isolated ten-frame run
+exited 0 and captured the mounted scene with CRT and Reconstruct active.
+All private snapshots, ROMs and captured game pixels remain outside Git.
+
+Final Release builds of native, SDL and headless targets succeeded. The
+complete suite passed 75/75 in 193.91 seconds, including the new restart
+check (six launches across WGL/GDI/SDL), GPU matrix and existing combat,
+barrel, recovery, handoff, animal and banana regressions. Evidence:
+`build/display-parity-final-build.log`, `build/display-parity-final-tests.log`
+and `build/Testing/Temporary/LastTest.log`. The native executable was restarted
+with OpenGL, CRT and Reconstruct enabled. Live Escape Settings verification
+showed all five reconstruction modes and three sliders, all four screen
+presets, keyboard P1 with no gamepad, and P2 assigned to XInput gamepad 1.
+P2's test-pulse button was invoked; motor feel is not inferred from the UI.
+The game was left paused at the owner's mounted scene. The original quick
+snapshot retained SHA-256
+`4123ce28e54f2eaf7cda66e14374d530bf845b605550f5797d091bd66682e421`.
+The DKC3 checkout remained unchanged. macOS builds/Metal, physical motor feel
+and full-game 21:9 acceptance remain outside the proven coverage.
+
+
+## 2026-09-13 - Characters, complete CRT controls and MSU-1
+
+Selectively integrated CRT revision `38a30177556b3f8177196b95e4d597ca5f8e3127`
+and Project Kongs revision `69820103df1414fe022d2262fda916fa2fc6f88d` from
+the MIT DKC2 project, preserving local co-op/input/widescreen changes.
+Unrelated upstream save-unlock/macOS pacing changes were excluded. The full
+75/75 baseline and pre-milestone dirty sources were backed up externally.
+
+WGL/SDL share CRT and reconstruction rendering, real capability gating,
+environment parsing and settings persistence. Expanded GPU checks caught
+NVIDIA rejecting reserved GLSL identifier `flat`; corrected it. The matrix
+covers 40 flat combinations and 13 CRT variations. Imported Kong move state
+needed per-slot storage for simultaneous TEAM dispatch; an interleaved
+partner-update regression checks that a throw remains active.
+
+The external pinned character pack imports 715 frames, 233 animations, 172
+mounted poses and 63 carry offsets. A 240-frame owner-snapshot comparison
+rendered replacement characters with no unmatched visible layouts and
+unchanged machine hashes. Assets remain outside the repository.
+
+MSU-1 adapts licensed sibling PCM/policy helpers; exact provenance and license
+texts are under third_party/dkc_msu1. Verified DKC2 scheduler/command addresses
+and song-bank aliases against the supported external image. Added menus,
+headless mixing, synthetic tests and scripts/check_msu1_pack.py. The supplied
+102-track restoration pack passed header checks, unchanged gameplay/video,
+changed music, nonzero stock SFX at zero music volume, and exact original audio
+when the replacement track is absent. An initial complete suite passed 80/80
+in 192.16 seconds; final validation after per-slot move changes follows below.
+
+State/rewind restarts the restored song, not its exact PCM position. Disabling
+mid-song resumes the suspended SNES sequence. Full-game transitions,
+replacement-character coverage, macOS/Linux builds and physical audio/rumble
+remain unverified.
+
+
+The combined Donkey/Kiddy TEAM replay then exposed a second integration gap:
+replacement callbacks bypassed the generated co-op barrel-owner read. The
+hook now resolves the same per-sprite owner and held-object view, restores it
+before guest execution, and preserves the owner in the short interpreted
+attachment routine. The original pair retains its compiled path. The extended
+`check_coop_barrels.py --kongs-pack PACK` replay passed DK-barrel left/right
+and ordinary-barrel throws, checking correct origin, direction, independent
+P2 movement and no mistaken rescue of an already present partner.
+
+Final Release build succeeded and the complete suite passed 80/80 in 193.97
+seconds (`build/characters-crt-msu1-final-tests.log`). The native executable
+launched and Escape opened/closed the pause menu. Live inspection verified
+the complete CRT controls, saved Donkey/Kiddy selection, and both replacement
+characters together, including Kiddy mounted on Rambi. The Audio checkbox
+switched between original SNES music and MSU-1 track 6 and persisted the
+supplied restoration folder at 100% music volume. The game was left paused
+with replacement music enabled. This establishes UI and rendered-state
+behavior, not a physical listening or rumble assessment.
+
+The owner's quick snapshot remained unchanged (SHA-256
+`4123ce28e54f2eaf7cda66e14374d530bf845b605550f5797d091bd66682e421`).
+The DKC3 checkout remained clean, and `git diff --check` passed. Private ROM,
+snapshot, character pack, music and acceptance outputs remain outside Git.

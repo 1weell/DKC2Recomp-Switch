@@ -1,11 +1,13 @@
 #include "desktop_launcher.h"
 
+#include "dkc2_coop.h"
 #include "dkc2_video.h"
 #include "launcher_profile.h"
 
 #include <SDL.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #ifndef DKC2_RELEASE_VERSION
@@ -48,10 +50,19 @@ static int ClampInt(int value, int minimum, int maximum) {
  * beside the shared launcher settings. */
 static int s_widescreen_edge = kDkc2VideoEdgeGlide;
 static int s_upscaler = 0;
+static int s_haptics_enabled = 1;
+int Dkc2LauncherHaptics(void) { return s_haptics_enabled; }
+void Dkc2LauncherSetHaptics(int enabled) { s_haptics_enabled = enabled != 0; }
 static int s_reconstruct_mode = 3;
 static int s_reconstruct_strength = 100;
 static int s_reconstruct_softness = 50;
 static int s_reconstruct_shading = 60;
+/* TEAM-mode input policy persisted beside the shared launcher settings;
+ * simultaneous co-op is the default the port ships. */
+static int s_coop_mode = kDkc2CoopSimultaneous;
+static int s_display = kDkc2DisplayFlat;
+static Dkc2CrtSettings s_crt = {kDkc2CrtPresetLivingRoom, 55, 80,
+                                kDkc2CrtMaskGrilleFine, 30, 40, 25, 50};
 
 int Dkc2LauncherUpscaler(void) { return s_upscaler; }
 void Dkc2LauncherSetUpscaler(int upscaler) {
@@ -72,6 +83,24 @@ void Dkc2LauncherSetReconstructSoftness(int percent) {
 int Dkc2LauncherReconstructShading(void) { return s_reconstruct_shading; }
 void Dkc2LauncherSetReconstructShading(int percent) {
   s_reconstruct_shading = ClampInt(percent, 0, 100);
+}
+
+int Dkc2LauncherCoopMode(void) { return s_coop_mode; }
+
+void Dkc2LauncherSetCoopMode(int mode) {
+  s_coop_mode = ClampInt(mode, kDkc2CoopSimultaneous, kDkc2CoopModeCount - 1);
+}
+
+int Dkc2LauncherDisplay(void) { return s_display; }
+void Dkc2LauncherSetDisplay(int display) {
+  s_display = display == kDkc2DisplayCrt ? kDkc2DisplayCrt
+                                         : kDkc2DisplayFlat;
+}
+const Dkc2CrtSettings *Dkc2LauncherCrt(void) { return &s_crt; }
+void Dkc2LauncherSetCrt(const Dkc2CrtSettings *crt) {
+  if (!crt) return;
+  s_crt = *crt;
+  Dkc2CrtSettingsClamp(&s_crt);
 }
 
 int Dkc2LauncherWidescreenEdge(void) {
@@ -169,6 +198,10 @@ void Dkc2LauncherSettingsLoad(RecompLauncherCSettings *settings) {
       legacy_widescreen = value != 0;
     else if (strcmp(key, "WidescreenEdge") == 0)
       Dkc2LauncherSetWidescreenEdge(value);
+    else if (strcmp(key, "CoopMode") == 0)
+      Dkc2LauncherSetCoopMode(value);
+    else if (strcmp(key, "HapticsEnabled") == 0)
+      Dkc2LauncherSetHaptics(value);
     else if (strcmp(key, "Upscaler") == 0)
       Dkc2LauncherSetUpscaler(value);
     else if (strcmp(key, "ReconstructMode") == 0)
@@ -179,6 +212,24 @@ void Dkc2LauncherSettingsLoad(RecompLauncherCSettings *settings) {
       Dkc2LauncherSetReconstructSoftness(value);
     else if (strcmp(key, "ReconstructShading") == 0)
       Dkc2LauncherSetReconstructShading(value);
+    else if (strcmp(key, "Display") == 0)
+      Dkc2LauncherSetDisplay(value);
+    else if (strcmp(key, "CrtPreset") == 0)
+      s_crt.preset = value;
+    else if (strcmp(key, "CrtScanlines") == 0)
+      s_crt.scanlines = value;
+    else if (strcmp(key, "CrtSharpness") == 0)
+      s_crt.sharpness = value;
+    else if (strcmp(key, "CrtMask") == 0)
+      s_crt.mask = value;
+    else if (strcmp(key, "CrtMaskStrength") == 0)
+      s_crt.mask_strength = value;
+    else if (strcmp(key, "CrtGlow") == 0)
+      s_crt.glow = value;
+    else if (strcmp(key, "CrtHalation") == 0)
+      s_crt.halation = value;
+    else if (strcmp(key, "CrtCurvature") == 0)
+      s_crt.curvature = value;
     else if (strcmp(key, "EnableAudio") == 0)
       settings->enable_audio = value != 0;
     else if (strcmp(key, "AudioFrequency") == 0)
@@ -223,6 +274,10 @@ void Dkc2LauncherSettingsLoad(RecompLauncherCSettings *settings) {
     }
   }
   (void)fclose(file);
+  /* A named preset is authoritative over the sliders saved beside it. */
+  Dkc2CrtSettingsClamp(&s_crt);
+  if (s_crt.preset != kDkc2CrtPresetCustom)
+    (void)Dkc2CrtSettingsApplyPreset(&s_crt, s_crt.preset);
   if (!saw_aspect_index && legacy_widescreen >= 0)
     settings->aspect_index = legacy_widescreen
         ? kDkc2VideoAspect16x9 : kDkc2VideoAspectNative;
@@ -242,9 +297,14 @@ bool Dkc2LauncherSettingsSave(const RecompLauncherCSettings *settings) {
                     "TextureFilter=%d\nScreenKind=%d\nAspectIndex=%d\n"
                     "Widescreen=%d\n"
                     "WidescreenEdge=%d\n"
+                    "CoopMode=%d\n"
                     "Upscaler=%d\nReconstructMode=%d\n"
                     "ReconstructStrength=%d\n"
                     "ReconstructSoftness=%d\nReconstructShading=%d\n"
+                    "HapticsEnabled=%d\n"
+                    "Display=%d\nCrtPreset=%d\nCrtScanlines=%d\n"
+                    "CrtSharpness=%d\nCrtMask=%d\nCrtMaskStrength=%d\n"
+                    "CrtGlow=%d\nCrtHalation=%d\nCrtCurvature=%d\n"
                     "EnableAudio=%d\n"
                     "AudioFrequency=%d\n"
                     "Volume=%d\nPlayer1Source=%d\nPlayer2Source=%d\n"
@@ -263,8 +323,13 @@ bool Dkc2LauncherSettingsSave(const RecompLauncherCSettings *settings) {
                              kDkc2VideoAspectCount - 1) !=
                         kDkc2VideoAspectNative,
                     s_widescreen_edge,
+                    s_coop_mode,
                     s_upscaler, s_reconstruct_mode, s_reconstruct_strength,
                     s_reconstruct_softness, s_reconstruct_shading,
+                    s_haptics_enabled,
+                    s_display, s_crt.preset, s_crt.scanlines,
+                    s_crt.sharpness, s_crt.mask, s_crt.mask_strength,
+                    s_crt.glow, s_crt.halation, s_crt.curvature,
                     settings->enable_audio != 0,
                     ClampInt(settings->audio_freq, 8000, 192000),
                     ClampInt(settings->volume, 0, 100),
@@ -354,7 +419,8 @@ int Dkc2LauncherRun(RecompLauncherCSettings *settings,
   game.num_known_sha256 = sizeof known_sha256 / sizeof known_sha256[0];
   game.widescreen_supported = 0;
   static const char *const aspect_labels[] = {
-      "4:3 (Native)", "16:10 (Mac)", "16:9 (Widescreen)"};
+      "4:3 (Native)", "16:10 (Widescreen)", "16:9 (Widescreen)",
+      "21:9 (Ultrawide)"};
   game.aspect_labels = aspect_labels;
   game.num_aspect_labels =
       (int)(sizeof aspect_labels / sizeof aspect_labels[0]);
@@ -393,4 +459,45 @@ int Dkc2LauncherRun(RecompLauncherCSettings *settings,
       DKC2_PRODUCT_TITLE, settings, &game, s_assets_path,
       initial_rom && initial_rom[0] ? initial_rom : NULL, selected_rom,
       selected_capacity);
+}
+
+/* Identical command-line overrides on both desktop hosts. */
+bool Dkc2LauncherApplyCrtEnvironment(char *error, size_t capacity) {
+  int display = s_display;
+  Dkc2CrtSettings crt = s_crt;
+  const char *value = getenv("DKC2_DISPLAY");
+  const char *invalid = NULL;
+  if (value && *value && !Dkc2CrtDisplayFromName(value, &display)) invalid = "DKC2_DISPLAY";
+  value = getenv("DKC2_CRT_PRESET");
+  if (value && *value) {
+    int preset;
+    if (!Dkc2CrtPresetFromName(value, &preset)) invalid = "DKC2_CRT_PRESET";
+    else if (preset == kDkc2CrtPresetCustom) crt.preset = preset;
+    else (void)Dkc2CrtSettingsApplyPreset(&crt, preset);
+  }
+  value = getenv("DKC2_CRT_MASK");
+  if (value && *value) {
+    if (!Dkc2CrtMaskFromName(value, &crt.mask)) invalid = "DKC2_CRT_MASK";
+    else crt.preset = kDkc2CrtPresetCustom;
+  }
+  struct { const char *name; int *value; } sliders[] = {
+    {"DKC2_CRT_SCANLINES", &crt.scanlines}, {"DKC2_CRT_SHARPNESS", &crt.sharpness},
+    {"DKC2_CRT_MASK_STRENGTH", &crt.mask_strength}, {"DKC2_CRT_GLOW", &crt.glow},
+    {"DKC2_CRT_HALATION", &crt.halation}, {"DKC2_CRT_CURVATURE", &crt.curvature}
+  };
+  for (size_t i = 0; i < sizeof sliders / sizeof sliders[0]; ++i) {
+    value = getenv(sliders[i].name);
+    if (!value || !*value) continue;
+    char *end = NULL;
+    long percent = strtol(value, &end, 10);
+    if (*end || percent < 0 || percent > 100) invalid = sliders[i].name;
+    else { *sliders[i].value = (int)percent; crt.preset = kDkc2CrtPresetCustom; }
+  }
+  if (invalid) {
+    if (error && capacity) snprintf(error, capacity, "Invalid %s; CRT sliders require 0 to 100", invalid);
+    return false;
+  }
+  Dkc2LauncherSetDisplay(display);
+  Dkc2LauncherSetCrt(&crt);
+  return true;
 }

@@ -1,7 +1,11 @@
+#include "../recomp-ui/src/third_party/tinyfiledialogs.h"
+#include "dkc2_kongs.h"
+#include "dkc2_music.h"
 #include "desktop_overlay.h"
 
 #include "desktop_input.h"
 #include "desktop_launcher.h"
+#include "dkc2_coop.h"
 #include "dkc2_video.h"
 
 #include "imgui.h"
@@ -14,6 +18,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <windowsx.h>
+#include "imgui_impl_sdlrenderer2.h"
 #endif
 
 #include <cstdio>
@@ -35,6 +40,15 @@ struct Dkc2DesktopOverlay {
   char status[128];
   bool status_success;
   bool initialized;
+  bool reconstruct_available;
+  bool crt_available;
+  char haptics_device[2][128];
+  bool haptics_supported[2];
+  bool software_backend;
+#ifdef _WIN32
+  SDL_Surface *software_surface;
+  SDL_Renderer *software_renderer;
+#endif
 };
 
 static const char *KeyBindingLabel(int scancode) {
@@ -281,10 +295,52 @@ extern "C" bool Dkc2DesktopOverlayInitWin32(Dkc2DesktopOverlay *overlay,
 #endif
 }
 
+extern "C" bool Dkc2DesktopOverlayInitWin32Software(
+    Dkc2DesktopOverlay *overlay, void *window) {
+#ifdef _WIN32
+  if (!overlay || !window || !BeginContext(overlay)) return false;
+  ImGui::GetIO().BackendPlatformName = "dkc2_win32_software";
+  overlay->platform = kDkc2OverlayPlatformWin32;
+  overlay->window = window;
+  overlay->software_backend = true;
+  overlay->initialized = true;
+  return true;
+#else
+  (void)overlay; (void)window;
+  return false;
+#endif
+}
+
+extern "C" void Dkc2DesktopOverlaySetHapticsDevice(
+    Dkc2DesktopOverlay *overlay, int player, const char *name, bool supported) {
+  if (!overlay || player < 0 || player >= 2) return;
+  std::snprintf(overlay->haptics_device[player], 128, "%s", name ? name : "");
+  overlay->haptics_supported[player] = name && *name && supported;
+}
+
+extern "C" void Dkc2DesktopOverlaySetReconstructAvailable(
+    Dkc2DesktopOverlay *overlay, bool available) {
+  if (overlay) overlay->reconstruct_available = available;
+}
+
+extern "C" void Dkc2DesktopOverlaySetCrtAvailable(
+    Dkc2DesktopOverlay *overlay, bool available) {
+  if (overlay) overlay->crt_available = available;
+}
+
 extern "C" void Dkc2DesktopOverlayDestroy(Dkc2DesktopOverlay *overlay) {
   if (!overlay) return;
   if (overlay->initialized) {
-    ImGui_ImplOpenGL3_Shutdown();
+#ifdef _WIN32
+    if (overlay->software_backend) {
+      if (overlay->software_renderer) {
+        ImGui_ImplSDLRenderer2_Shutdown();
+        SDL_DestroyRenderer(overlay->software_renderer);
+      }
+      SDL_FreeSurface(overlay->software_surface);
+    } else
+#endif
+      ImGui_ImplOpenGL3_Shutdown();
     if (overlay->platform == kDkc2OverlayPlatformSdl)
       ImGui_ImplSDL2_Shutdown();
     ImGui::DestroyContext();
@@ -565,6 +621,58 @@ static void DrawMainPage(Dkc2DesktopOverlay *overlay) {
         &overlay->model, kDkc2OverlayActionQuit);
 }
 
+static void DrawCharactersPage(Dkc2DesktopOverlay *overlay) {
+  ImGui::TextUnformatted("Playable Kongs");
+  ImGui::Separator();
+  ImGui::TextWrapped("Choose who fills each character slot. Hold Down and press Y on the "
+                     "ground for Donkey's hand slap or Kiddy's body slam. Each uses his "
+                     "own barrel throw. Donkey and Kiddy do not helicopter-float. "
+                     "Select swaps Kongs with a tag handoff.");
+  ImGui::Spacing();
+  bool changed = false;
+  ImGui::BeginDisabled(!Dkc2KongsReady());
+  for (int slot = 0; slot < 2; ++slot) {
+    const char *labels[] = {slot == 0 ? "Diddy Kong (original)" : "Dixie Kong (original)",
+                            "Donkey Kong", "Kiddy Kong"};
+    int choice = Dkc2KongsChoice(slot);
+    if (ImGui::Combo(slot == 0 ? "Diddy slot" : "Dixie slot", &choice, labels, 3)) {
+      Dkc2KongsSetChoice(slot, choice);
+      changed = true;
+    }
+  }
+  if (ImGui::Button("Donkey + Kiddy")) {
+    Dkc2KongsSetChoice(0, kDkc2KongDonkey);
+    Dkc2KongsSetChoice(1, kDkc2KongKiddy);
+    changed = true;
+  }
+  ImGui::EndDisabled();
+  ImGui::SameLine();
+  if (ImGui::Button("Original pair")) {
+    Dkc2KongsSetChoice(0, kDkc2KongOriginal);
+    Dkc2KongsSetChoice(1, kDkc2KongOriginal);
+    changed = true;
+  }
+  ImGui::Spacing();
+  ImGui::TextWrapped("Your choice is remembered. Resume to apply it; use the game's "
+                     "usual team-swap button to change the active Kong.");
+  ImGui::Separator();
+  ImGui::TextWrapped("%s", Dkc2KongsStatus());
+  if (ImGui::Button("Load character pack...")) {
+    const char *filters[] = {"*.dkc2kongs"};
+    const char *path = tinyfd_openFileDialog("Select Project Kongs character pack",
+        Dkc2KongsPath(), 1, filters, "DKC2 character pack", 0);
+    if (path) {
+      const bool loaded = Dkc2KongsLoad(path);
+      changed = loaded || changed;
+      Dkc2DesktopOverlaySetStatus(overlay, Dkc2KongsStatus(), loaded);
+    }
+  }
+  if (changed && !Dkc2KongsSaveSettings())
+    Dkc2DesktopOverlaySetStatus(overlay, "Character choices applied, but could not be saved.", false);
+  ImGui::Spacing();
+  ImGui::TextDisabled("Project Kongs: H4v0c21, Mattrizzle, BlueImp; custom sprites: Phyreburnz.");
+}
+
 static void DrawSettingsPage(Dkc2DesktopOverlay *overlay) {
   RecompLauncherCSettings &settings = overlay->settings;
   ImGui::TextUnformatted("Display");
@@ -583,6 +691,73 @@ static void DrawSettingsPage(Dkc2DesktopOverlay *overlay) {
     }
     ImGui::EndCombo();
   }
+  /* Display: the flat panel path or the CRT television simulation with its
+   * preset and tunables (desktop_crt.h). Remembered by the launcher like
+   * the Reconstruct settings; the SDL host applies it on the next frame. */
+  static const char *display_labels[kDkc2DisplayCount] = {
+      "Flat panel", "CRT television"};
+  int display = Dkc2LauncherDisplay() == kDkc2DisplayCrt ? 1 : 0;
+  ImGui::BeginDisabled(!overlay->crt_available);
+  if (ImGui::BeginCombo("Display", display_labels[display])) {
+    for (int i = 0; i < kDkc2DisplayCount; i++) {
+      if (ImGui::Selectable(display_labels[i], display == i) && display != i)
+        Dkc2LauncherSetDisplay(i);
+    }
+    ImGui::EndCombo();
+  }
+  ImGui::EndDisabled();
+  if (!overlay->crt_available)
+    ImGui::TextWrapped("CRT television requires an available OpenGL shader renderer.");
+  const bool crt_display = overlay->crt_available &&
+      Dkc2LauncherDisplay() == kDkc2DisplayCrt;
+  if (crt_display) {
+    Dkc2CrtSettings crt = *Dkc2LauncherCrt();
+    Dkc2CrtSettingsClamp(&crt);
+    bool changed = false;
+    static const char *preset_labels[kDkc2CrtPresetCount] = {
+        "Living room", "Studio monitor", "Soft", "Custom"};
+    if (ImGui::BeginCombo("Tube preset", preset_labels[crt.preset])) {
+      for (int i = 0; i < kDkc2CrtPresetCount; i++) {
+        if (ImGui::Selectable(preset_labels[i], crt.preset == i) &&
+            crt.preset != i) {
+          if (i == kDkc2CrtPresetCustom) crt.preset = i;
+          else (void)Dkc2CrtSettingsApplyPreset(&crt, i);
+          changed = true;
+        }
+      }
+      ImGui::EndCombo();
+    }
+    bool slid = false;
+    slid |= ImGui::SliderInt("Scanlines", &crt.scanlines, 0, 100, "%d%%");
+    slid |= ImGui::SliderInt("Sharpness", &crt.sharpness, 0, 100, "%d%%");
+    static const char *mask_labels[kDkc2CrtMaskCount] = {
+        "None", "Aperture grille, fine", "Aperture grille, coarse",
+        "Slot mask"};
+    if (ImGui::BeginCombo("Phosphor mask", mask_labels[crt.mask])) {
+      for (int i = 0; i < kDkc2CrtMaskCount; i++) {
+        if (ImGui::Selectable(mask_labels[i], crt.mask == i) &&
+            crt.mask != i) {
+          crt.mask = i;
+          slid = true;
+        }
+      }
+      ImGui::EndCombo();
+    }
+    slid |= ImGui::SliderInt("Mask strength", &crt.mask_strength, 0, 100,
+                             "%d%%");
+    slid |= ImGui::SliderInt("Glow", &crt.glow, 0, 100, "%d%%");
+    slid |= ImGui::SliderInt("Halation", &crt.halation, 0, 100, "%d%%");
+    slid |= ImGui::SliderInt("Curvature", &crt.curvature, 0, 100, "%d%%");
+    if (slid) {
+      crt.preset = kDkc2CrtPresetCustom;
+      changed = true;
+    }
+    if (changed) Dkc2LauncherSetCrt(&crt);
+    ImGui::TextDisabled(
+        "A beam whose lines fade in highlights, a fine phosphor mask, glow, "
+        "and a gently curved tube, with no brightness lost. Fades out in "
+        "small windows.");
+  }
   static const char *renderer_labels[] = {"GDI compatibility", "OpenGL"};
   settings.renderer = settings.renderer ? 1 : 0;
   if (ImGui::BeginCombo("Renderer", renderer_labels[settings.renderer])) {
@@ -599,20 +774,30 @@ static void DrawSettingsPage(Dkc2DesktopOverlay *overlay) {
   static const char *upscaler_labels[] = {
       "Nearest (pixel exact)", "Bilinear",
       "Reconstruct (experimental)"};
-  int upscaler = Dkc2LauncherUpscaler() == 2
-                     ? 2 : (settings.texture_filter != 0 ? 1 : 0);
+  /* Report the compiled shader capability of the current renderer. */
+  const bool reconstruct_available = overlay->reconstruct_available;
+  int upscaler = Dkc2DesktopOverlayEffectiveUpscaler(
+      reconstruct_available, Dkc2LauncherUpscaler(),
+      settings.texture_filter != 0);
+  ImGui::BeginDisabled(crt_display);
   if (ImGui::BeginCombo("Upscaler", upscaler_labels[upscaler])) {
     for (int i = 0; i < 3; i++) {
-      if (ImGui::Selectable(upscaler_labels[i], upscaler == i) &&
-          upscaler != i) {
+      ImGui::BeginDisabled(i == 2 && !reconstruct_available);
+      if (ImGui::Selectable(upscaler_labels[i], upscaler == i)) {
         Dkc2LauncherSetUpscaler(i);
         if (i < 2)
           settings.texture_filter = i;
       }
+      ImGui::EndDisabled();
     }
     ImGui::EndCombo();
   }
-  if (Dkc2LauncherUpscaler() == 2) {
+  if (!reconstruct_available) {
+    ImGui::TextWrapped(
+        "Reconstruct requires OpenGL shader support. Select the OpenGL "
+        "renderer and restart the game, or use DKC2RecompSDL.exe.");
+  }
+  if (reconstruct_available && Dkc2LauncherUpscaler() == 2) {
     static const char *mode_labels[] = {
         "Sharp pixels only", "+ Dither decoding",
         "+ Diagonal edges", "+ Level-2 slopes", "+ Level-3 slopes"};
@@ -639,8 +824,12 @@ static void DrawSettingsPage(Dkc2DesktopOverlay *overlay) {
         "sharp at any scale. Softness widens every transition; smooth "
         "shading turns shading bands into gradients.");
   }
+  ImGui::EndDisabled();
+  if (crt_display)
+    ImGui::TextDisabled("Bypassed while the CRT television display is on.");
   static const char *aspect_labels[] = {
-      "4:3 (Native)", "16:10 (Mac)", "16:9 (Widescreen)"};
+      "4:3 (Native)", "16:10 (Widescreen)", "16:9 (Widescreen)",
+      "21:9 (Ultrawide)"};
   if (settings.aspect_index < kDkc2VideoAspectNative ||
       settings.aspect_index >= kDkc2VideoAspectCount)
     settings.aspect_index = kDkc2VideoAspectNative;
@@ -676,11 +865,32 @@ static void DrawSettingsPage(Dkc2DesktopOverlay *overlay) {
   ImGui::TextDisabled(
       "What a wide view shows at a level's walls; the game's camera is "
       "never changed.");
+  /* TEAM-mode input policy. Host-only: the helpers decide which
+   * controller words each Kong may read each frame, and the choice never
+   * enters controller registers, save states, or recordings. */
+  static const char *coop_labels[kDkc2CoopModeCount] = {
+      "Simultaneous (both play at once)", "Classic (alternate on hit)"};
+  int coop = Dkc2LauncherCoopMode();
+  if (coop < kDkc2CoopSimultaneous || coop >= kDkc2CoopModeCount)
+    coop = kDkc2CoopSimultaneous;
+  if (ImGui::BeginCombo("2P Team mode", coop_labels[coop])) {
+    for (int i = 0; i < kDkc2CoopModeCount; i++) {
+      if (ImGui::Selectable(coop_labels[i], coop == i) && coop != i) {
+        Dkc2LauncherSetCoopMode(i);
+        Dkc2CoopSetMode((Dkc2CoopMode)i);
+      }
+    }
+    ImGui::EndCombo();
+  }
+  ImGui::TextDisabled(
+      "In the game's 2 PLAYER TEAM mode, simultaneous lets controller 1 "
+      "and controller 2 drive their own Kong at the same time; classic "
+      "keeps the cartridge's control swapping when a Kong is hit.");
   static const char *screen_labels[] = {
       "Raw", "CRT", "Composite", "Trinitron"};
   if (settings.screen_kind < 0 || settings.screen_kind > 3)
     settings.screen_kind = 0;
-  if (ImGui::BeginCombo("Screen model",
+  if (ImGui::BeginCombo("Phosphor colors",
                         screen_labels[settings.screen_kind])) {
     for (int i = 0; i < 4; i++) {
       if (ImGui::Selectable(screen_labels[i], settings.screen_kind == i))
@@ -695,6 +905,39 @@ static void DrawSettingsPage(Dkc2DesktopOverlay *overlay) {
   bool audio = settings.enable_audio != 0;
   if (ImGui::Checkbox("Enable audio", &audio))
     settings.enable_audio = audio ? 1 : 0;
+  bool replacement_music = Dkc2MusicEnabled();
+  if (ImGui::Checkbox("Replacement music (MSU-1)", &replacement_music)) {
+    Dkc2MusicSetEnabled(replacement_music);
+    (void)Dkc2MusicSaveSettings();
+  }
+  if (ImGui::Button("Choose MSU-1 music folder...")) {
+    const char *folder = tinyfd_selectFolderDialog("Choose extracted MSU-1 PCM folder", Dkc2MusicDirectory());
+    if (folder && Dkc2MusicLoad(folder)) (void)Dkc2MusicSaveSettings();
+  }
+  int music_gain = Dkc2MusicGain();
+  if (ImGui::SliderInt("Music volume", &music_gain, 0, 200, "%d%%")) {
+    Dkc2MusicSetGain(music_gain);
+    (void)Dkc2MusicSaveSettings();
+  }
+  ImGui::TextWrapped("%s", Dkc2MusicStatus());
+  if (*Dkc2MusicDirectory()) ImGui::TextWrapped("%s", Dkc2MusicDirectory());
+  ImGui::TextWrapped("Use an extracted folder containing dkc2_msu1-N.pcm files. Missing tracks use SNES music. Loading a state restarts its music.");
+  bool haptics = Dkc2LauncherHaptics() != 0;
+  if (ImGui::Checkbox("Stomp rumble", &haptics))
+    Dkc2LauncherSetHaptics(haptics ? 1 : 0);
+  for (int player = 0; player < 2; ++player) {
+    ImGui::PushID(player);
+    ImGui::TextWrapped("Player %d: %s", player + 1,
+        overlay->haptics_device[player][0] ? overlay->haptics_device[player]
+                                         : "No gamepad assigned");
+    ImGui::BeginDisabled(!haptics || !overlay->haptics_supported[player]);
+    if (ImGui::Button("Test controller pulse"))
+      Dkc2DesktopOverlayModelRequest(&overlay->model,
+          player == 0 ? kDkc2OverlayActionTestHapticsP1 : kDkc2OverlayActionTestHapticsP2);
+    ImGui::EndDisabled();
+    ImGui::PopID();
+  }
+  ImGui::TextWrapped("Stomps pulse the controller assigned to that player.");
   static const int rates[] = {32040, 32000, 44100, 48000};
   char rate_label[32];
   std::snprintf(rate_label, sizeof rate_label, "%d Hz", settings.audio_freq);
@@ -730,6 +973,23 @@ static void DrawSettingsPage(Dkc2DesktopOverlay *overlay) {
       "rate choices are retained for launcher compatibility.");
   if (ImGui::Button("Restore All Settings to Defaults")) {
     Dkc2LauncherSettingsDefault(&overlay->settings);
+    Dkc2LauncherSetHaptics(1);
+    Dkc2MusicSetEnabled(false);
+    Dkc2MusicSetGain(100);
+    (void)Dkc2MusicSaveSettings();
+    Dkc2LauncherSetDisplay(kDkc2DisplayFlat);
+    Dkc2CrtSettings crt_defaults;
+    Dkc2CrtSettingsDefault(&crt_defaults);
+    Dkc2LauncherSetCrt(&crt_defaults);
+    Dkc2LauncherSetUpscaler(0);
+    Dkc2LauncherSetReconstructMode(3);
+    Dkc2LauncherSetReconstructStrength(100);
+    Dkc2LauncherSetReconstructSoftness(50);
+    Dkc2LauncherSetReconstructShading(60);
+    Dkc2LauncherSetWidescreenEdge(kDkc2VideoEdgeGlide);
+    Dkc2VideoSetEdgePolicy(kDkc2VideoEdgeGlide);
+    Dkc2LauncherSetCoopMode(kDkc2CoopSimultaneous);
+    Dkc2CoopSetMode(kDkc2CoopSimultaneous);
     Dkc2DesktopOverlayModelSetAssistTools(
         &overlay->model, overlay->settings.assist_tools != 0);
   }
@@ -985,15 +1245,16 @@ static void DrawCreditsPage(void) {
       "curated list is supplied.");
 }
 
-extern "C" void Dkc2DesktopOverlayRenderOpenGl(
-    void *overlay_pointer, int width, int height) {
-  Dkc2DesktopOverlay *overlay =
-      static_cast<Dkc2DesktopOverlay *>(overlay_pointer);
+static void RenderOverlayFrame(Dkc2DesktopOverlay *overlay, int width, int height) {
   if (!overlay || !overlay->initialized || !overlay->model.open ||
       width <= 0 || height <= 0)
     return;
 
-  ImGui_ImplOpenGL3_NewFrame();
+#ifdef _WIN32
+  if (overlay->software_backend) ImGui_ImplSDLRenderer2_NewFrame();
+  else
+#endif
+    ImGui_ImplOpenGL3_NewFrame();
   if (overlay->platform == kDkc2OverlayPlatformSdl) {
     ImGui_ImplSDL2_NewFrame();
     ImGui::NewFrame();
@@ -1046,6 +1307,10 @@ extern "C" void Dkc2DesktopOverlayRenderOpenGl(
       DrawSettingsPage(overlay);
       ImGui::EndTabItem();
     }
+    if (ImGui::BeginTabItem("Characters")) {
+      DrawCharactersPage(overlay);
+      ImGui::EndTabItem();
+    }
     if (ImGui::BeginTabItem("Assist Tools / Cheats")) {
       DrawAssistPage(overlay);
       ImGui::EndTabItem();
@@ -1062,5 +1327,56 @@ extern "C" void Dkc2DesktopOverlayRenderOpenGl(
   }
   ImGui::End();
   ImGui::Render();
-  ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+#ifdef _WIN32
+  if (overlay->software_backend)
+    ImGui_ImplSDLRenderer2_RenderDrawData(ImGui::GetDrawData(), overlay->software_renderer);
+  else
+#endif
+    ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+}
+
+extern "C" void Dkc2DesktopOverlayRenderOpenGl(void *overlay, int width, int height) {
+  RenderOverlayFrame(static_cast<Dkc2DesktopOverlay *>(overlay), width, height);
+}
+
+extern "C" bool Dkc2DesktopOverlayRenderSoftware(
+    void *pointer, uint8_t *pixels, int width, int height) {
+#ifdef _WIN32
+  Dkc2DesktopOverlay *overlay = static_cast<Dkc2DesktopOverlay *>(pointer);
+  if (!overlay || !overlay->initialized || !overlay->model.open) return true;
+  if (!overlay->software_backend || !pixels || width <= 0 || height <= 0) return false;
+  if (!overlay->software_renderer || !overlay->software_surface || overlay->software_surface->w != width ||
+      overlay->software_surface->h != height) {
+    if (overlay->software_renderer) {
+      ImGui_ImplSDLRenderer2_Shutdown();
+      SDL_DestroyRenderer(overlay->software_renderer);
+      overlay->software_renderer = nullptr;
+    }
+    SDL_FreeSurface(overlay->software_surface);
+    overlay->software_surface = SDL_CreateRGBSurfaceWithFormat(
+        0, width, height, 32, SDL_PIXELFORMAT_ARGB8888);
+    if (!overlay->software_surface) return false;
+    overlay->software_renderer = SDL_CreateSoftwareRenderer(overlay->software_surface);
+    if (!overlay->software_renderer) return false;
+    if (!ImGui_ImplSDLRenderer2_Init(overlay->software_renderer)) {
+      SDL_DestroyRenderer(overlay->software_renderer);
+      overlay->software_renderer = nullptr;
+      return false;
+    }
+  }
+  for (int y = 0; y < height; ++y)
+    std::memcpy(static_cast<uint8_t *>(overlay->software_surface->pixels) +
+                    y * overlay->software_surface->pitch,
+                pixels + static_cast<size_t>(y) * width * 4, static_cast<size_t>(width) * 4);
+  RenderOverlayFrame(overlay, width, height);
+  SDL_RenderPresent(overlay->software_renderer);
+  for (int y = 0; y < height; ++y)
+    std::memcpy(pixels + static_cast<size_t>(y) * width * 4,
+                static_cast<uint8_t *>(overlay->software_surface->pixels) +
+                    y * overlay->software_surface->pitch, static_cast<size_t>(width) * 4);
+  return true;
+#else
+  (void)pointer; (void)pixels; (void)width; (void)height;
+  return false;
+#endif
 }

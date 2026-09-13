@@ -1,4 +1,7 @@
+#include "dkc2_kongs.h"
+#include "dkc2_music.h"
 #include "dkc2_game.h"
+#include "dkc2_coop.h"
 #include "dkc2_video.h"
 #include "input_playback.h"
 #include "verified_rom.h"
@@ -455,7 +458,7 @@ int main(int argc, char **argv) {
   const char *aspect_text = getenv("DKC2_ASPECT");
   if (aspect_text && *aspect_text) {
     if (!Dkc2VideoAspectFromName(aspect_text, &aspect)) {
-      fprintf(stderr, "DKC2_ASPECT must be 4:3, 16:10, or 16:9\n");
+      fprintf(stderr, "DKC2_ASPECT must be 4:3, 16:10, 16:9, or 21:9\n");
       free(rom);
       return 2;
     }
@@ -478,6 +481,20 @@ int main(int argc, char **argv) {
       Dkc2VideoSetEdgePolicy(edge_policy);
     }
   }
+  {
+    const char *coop_text = getenv("DKC2_COOP");
+    Dkc2CoopMode coop_mode = kDkc2CoopSimultaneous;
+    if (coop_text && *coop_text) {
+      if (!Dkc2CoopModeFromName(coop_text, &coop_mode)) {
+        fprintf(stderr, "DKC2_COOP must be simultaneous or classic\n");
+        free(rom);
+        return 2;
+      }
+      Dkc2CoopSetMode(coop_mode);
+    }
+  }
+  Dkc2KongsInitialize();
+  Dkc2MusicInitialize();
   RtlRegisterGame(Dkc2GameInfo());
   if (!SnesInit(rom, (int)rom_size)) {
     fprintf(stderr, "snesrecomp rejected the verified ROM\n");
@@ -550,7 +567,7 @@ int main(int argc, char **argv) {
   }
 
   enum {
-    kBufferWidth = kDkc2VideoWidescreenWidth,
+    kBufferWidth = kDkc2VideoMaximumWidth,
     kHeight = kDkc2VideoHeight,
     kBytesPerPixel = kDkc2VideoBytesPerPixel
   };
@@ -657,6 +674,19 @@ int main(int argc, char **argv) {
               input_playback.count, p);
     }
   }
+  /* DKC2_COOP_TRACE=<path>: host-observation JSONL for simultaneous co-op
+   * validation. Once per emulated frame it records the packed input word,
+   * the game-mode flag, the active-Kong slot, and both Kong slots'
+   * position/state words straight from WRAM. It never writes guest state;
+   * it exists so a deterministic input route can prove which controller
+   * moved which Kong, including the classic A/B comparison. */
+  const char *coop_trace_path = getenv("DKC2_COOP_TRACE");
+  FILE *coop_trace = coop_trace_path && *coop_trace_path
+                         ? fopen(coop_trace_path, "w")
+                         : NULL;
+  if (coop_trace) {
+    fprintf(stderr, "coop_trace: opened %s\n", coop_trace_path);
+  }
   /* DKC2_SAVESTATE_RELOAD_FRAMES=a,b,...: at those host frames reload the
    * input savestate instead of running the console, then draw, exactly as
    * the desktop app's rewind restores a snapshot and draws without running
@@ -710,6 +740,72 @@ int main(int argc, char **argv) {
     }
     if (!reloaded)
       RtlRunFrame(_in);
+    if (coop_trace) {
+      const unsigned slot_a = 0x0DE2, slot_b = 0x0E40;
+      const unsigned ax = (unsigned)(g_ram[slot_a + 6] |
+                                     ((unsigned)g_ram[slot_a + 7] << 8));
+      const unsigned ay = (unsigned)(g_ram[slot_a + 10] |
+                                     ((unsigned)g_ram[slot_a + 11] << 8));
+      const unsigned as = (unsigned)(g_ram[slot_a + 0x2E] |
+                                     ((unsigned)g_ram[slot_a + 0x2F] << 8));
+      const unsigned bx = (unsigned)(g_ram[slot_b + 6] |
+                                     ((unsigned)g_ram[slot_b + 7] << 8));
+      const unsigned by = (unsigned)(g_ram[slot_b + 10] |
+                                     ((unsigned)g_ram[slot_b + 11] << 8));
+      const unsigned bs = (unsigned)(g_ram[slot_b + 0x2E] |
+                                     ((unsigned)g_ram[slot_b + 0x2F] << 8));
+      fprintf(coop_trace,
+              "{\"frame\":%ld,\"in\":\"%06x\",\"mode\":%u,\"sub\":\"%02x\","
+              "\"p1\":\"%04x\",\"p2\":\"%04x\",\"in0\":\"%04x\","
+              "\"active\":\"%04x\",\"a\":{\"x\":%u,\"y\":%u,\"s\":\"%04x\"},"
+              "\"b\":{\"x\":%u,\"y\":%u,\"s\":\"%04x\"}",
+              frame, (unsigned)_in, (unsigned)(g_ram[0x060D] |
+                      ((unsigned)g_ram[0x060E] << 8)),
+              (unsigned)g_ram[0x0529],
+              (unsigned)(g_ram[0x0502] | ((unsigned)g_ram[0x0503] << 8)),
+              (unsigned)(g_ram[0x0504] | ((unsigned)g_ram[0x0505] << 8)),
+              (unsigned)(g_ram[0x0512] | ((unsigned)g_ram[0x0513] << 8)),
+              (unsigned)(g_ram[0x0593] | ((unsigned)g_ram[0x0594] << 8)),
+              ax, ay, as, bx, by, bs);
+      if (getenv("DKC2_COOP_TRACE_SPRITES")) {
+        fprintf(coop_trace, ",\"interaction_slot\":%u,\"collision_slot\":%u,"
+                           "\"held_slot\":%u,\"held_dx\":%u,\"held_dy\":%u,"
+                           "\"kong_flags\":%u,\"animal_slot\":%u,\"animal_type\":%u,\"time_freeze\":%u,"
+                           "\"camera_x\":%u,\"camera_max\":%u,\"wide_extra\":%d,\"wide_bias\":%d,\"wide_ready\":%d,\"bananas_bcd\":%u,\"stomp_events\":%u,\"sprites\":[",
+                (unsigned)ReadWram16(0x0A84), (unsigned)ReadWram16(0x006A),
+                (unsigned)ReadWram16(0x0D7A), (unsigned)ReadWram16(0x0D7C),
+                (unsigned)ReadWram16(0x0D7E), (unsigned)ReadWram16(0x08C2),
+                (unsigned)ReadWram16(0x006C), (unsigned)ReadWram16(0x006E),
+                (unsigned)ReadWram16(0x0A36), (unsigned)ReadWram16(0x17BA),
+                (unsigned)ReadWram16(0x0AFC), Dkc2VideoExtra(),
+                Dkc2VideoPresentationBias(), (int)Dkc2VideoTerrainReady(),
+                (unsigned)ReadWram16(0x096D), (unsigned)Dkc2CoopTakeStompEvents());
+        for (unsigned slot = 0; slot < 24; ++slot) {
+          const unsigned base = 0x0DE2 + slot * 0x5E;
+          const unsigned offsets[] = {0, 2, 6, 10, 0x12, 0x1C, 0x2E, 0x30, 0x32};
+          const char *names[] = {"id", "order", "x", "y", "attr", "render", "state", "flags", "action"};
+          fprintf(coop_trace, "%s{\"slot\":%u", slot ? "," : "", slot);
+          for (unsigned field = 0; field < sizeof offsets / sizeof offsets[0]; ++field) {
+            unsigned address = base + offsets[field];
+            fprintf(coop_trace, ",\"%s\":%u", names[field],
+                    (unsigned)ReadWram16(address));
+          }
+          if (slot < 2) {
+            const unsigned palette = 0x80 +
+                ((ReadWram16(base + 0x12) >> 9) & 7) * 16;
+            fputs(",\"colors\":[", coop_trace);
+            for (unsigned color = 1; color < 16; ++color)
+              fprintf(coop_trace, "%s%u", color == 1 ? "" : ",",
+                      (unsigned)g_ppu->cgram[palette + color]);
+            fputc(']', coop_trace);
+          }
+          fputc('}', coop_trace);
+        }
+        fputc(']', coop_trace);
+      }
+      fputs("}\n", coop_trace);
+      fflush(coop_trace);
+    }
     if (rewind_store && rewind_frames && frame % rewind_interval == 0 &&
         rewind_count < rewind_capacity &&
         RtlSaveSnapshotToMemory(rewind_store + rewind_count * rewind_size,
@@ -925,6 +1021,7 @@ int main(int argc, char **argv) {
         (size_t)audio_frames_this_frame * 2u;
     memset(audio, 0, audio_samples_this_frame * sizeof audio[0]);
     RtlRenderAudio(audio, audio_frames_this_frame, 2);
+    Dkc2MusicMix(audio, audio_frames_this_frame, 32040);
     audio_rendered_frames += (unsigned)audio_frames_this_frame;
     int audio_active = 0;
     for (size_t i = 0; i < audio_samples_this_frame; i++) {
@@ -1207,6 +1304,13 @@ int main(int argc, char **argv) {
   }
   if (audio_pcm_path && *audio_pcm_path) {
     printf("\naudio_output=%s", audio_pcm_path);
+  }
+  const char *savestate_output = getenv("DKC2_SAVESTATE_OUTPUT");
+  if (savestate_output && *savestate_output && !RtlSaveSnapshot(savestate_output)) {
+    fprintf(stderr, "\nunable to write private savestate: %s\n", savestate_output);
+    Dkc2InputPlaybackFree(&input_playback);
+    free(rom);
+    return 17;
   }
   printf("\nresult=completed frames=%ld\n", frame_limit);
 #if SNESRECOMP_TRACE

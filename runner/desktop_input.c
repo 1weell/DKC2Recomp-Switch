@@ -1,5 +1,15 @@
 #include "desktop_input.h"
 
+uint32_t Dkc2UpdateMenuChord(uint32_t buttons, bool *latched) {
+  const uint32_t mask = kDkc2GamepadStart | kDkc2GamepadBack;
+  if (!latched) return 0;
+  if (!(buttons & mask)) { *latched = false; return 0; }
+  if (*latched) return kDkc2MenuInputBlock;
+  if ((buttons & mask) != mask) return 0;
+  *latched = true;
+  return kDkc2MenuInputToggle | kDkc2MenuInputBlock;
+}
+
 static int ClampInt(int value, int minimum, int maximum) {
   if (value < minimum) return minimum;
   if (value > maximum) return maximum;
@@ -235,4 +245,10 @@ uint32_t Dkc2RoutePlayerInputs(
   }
   if (host_actions) *host_actions = actions;
   return packed;
+}
+
+int Dkc2GamepadIndexForPlayer(const int sources[2], int player) {
+  if (!sources || player < 0 || player >= 2 || sources[player] != kDkc2InputSourceGamepad)
+    return -1;
+  return player == 1 && sources[0] == kDkc2InputSourceGamepad ? 1 : 0;
 }

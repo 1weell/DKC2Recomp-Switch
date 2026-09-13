@@ -45,7 +45,7 @@ LAYER_MASKS = {
     "bg3": 0x04,
     "obj": 0x10,
 }
-ASPECT_EXTRA = {"16:9": 43, "16:10": 26}
+ASPECT_EXTRA = {"16:9": 43, "16:10": 26, "21:9": 95}
 DEFAULT_LAYERS = ("composite", "bg1", "bg2", "bg3")
 TRACE_PREFIX = "widescreen_frame="
 

@@ -44,6 +44,9 @@ __pycache__/
 saves/
 rom.cfg
 launcher.cfg
+kongs.cfg
+msu1.cfg
+*.dkc2kongs
 .DS_Store
 Thumbs.db
 

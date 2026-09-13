@@ -28,6 +28,10 @@ enum {
   kDkc2VideoWidescreenExtra = 43,
   kDkc2VideoWidescreenWidth =
       kDkc2VideoNativeWidth + 2 * kDkc2VideoWidescreenExtra,
+  /* Nearest symmetric 21:9 width within the runtime's nine-bit OAM limit. */
+  kDkc2Video21x9Extra = 95,
+  kDkc2Video21x9Width = kDkc2VideoNativeWidth + 2 * kDkc2Video21x9Extra,
+  kDkc2VideoMaximumWidth = kDkc2Video21x9Width,
   kDkc2VideoBytesPerPixel = 4,
   /*
    * DKC2 can advance a scanline band's alternate terrain phase a few pixels
@@ -50,6 +54,7 @@ typedef enum Dkc2VideoAspect {
   kDkc2VideoAspectNative = 0,
   kDkc2VideoAspect16x10,
   kDkc2VideoAspect16x9,
+  kDkc2VideoAspect21x9,
   kDkc2VideoAspectCount,
 } Dkc2VideoAspect;
 

@@ -8,6 +8,23 @@ static int Expect(bool condition, const char *message) {
 }
 
 int main(void) {
+  /* The same saved Reconstruct preference has a truthful fallback in a
+   * Win32 host and remains available when that config is opened by SDL. */
+  const int saved_upscaler = 2;
+  if (Expect(Dkc2DesktopOverlayEffectiveUpscaler(false, saved_upscaler,
+                                                false) == 0 &&
+                 Dkc2DesktopOverlayEffectiveUpscaler(false, saved_upscaler,
+                                                      true) == 1 &&
+                 Dkc2DesktopOverlayEffectiveUpscaler(true, saved_upscaler,
+                                                      false) == 2 &&
+                 Dkc2DesktopOverlayEffectiveUpscaler(true, saved_upscaler,
+                                                      true) == 2,
+             "unsupported Reconstruct must display its effective sampler"))
+    return 1;
+  if (Expect(Dkc2DesktopOverlayEffectiveUpscaler(true, 0, true) == 1 &&
+                 Dkc2DesktopOverlayEffectiveUpscaler(true, 1, false) == 0,
+             "nearest/bilinear must follow the existing filter setting"))
+    return 1;
   Dkc2DesktopOverlayModel model;
   Dkc2DesktopOverlayModelInit(&model, false);
   if (Expect(Dkc2DesktopEscapeExitsFullscreen(true, false) &&

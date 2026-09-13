@@ -15,7 +15,17 @@ static bool EnsureBackBuffer(Dkc2DesktopPresenter *presenter, HDC target,
     if (!presenter->back_dc) return false;
   }
 
-  HBITMAP replacement = CreateCompatibleBitmap(target, width, height);
+  BITMAPINFO info;
+  memset(&info, 0, sizeof info);
+  info.bmiHeader.biSize = sizeof info.bmiHeader;
+  info.bmiHeader.biWidth = width;
+  info.bmiHeader.biHeight = -height;
+  info.bmiHeader.biPlanes = 1;
+  info.bmiHeader.biBitCount = 32;
+  info.bmiHeader.biCompression = BI_RGB;
+  void *back_pixels = NULL;
+  HBITMAP replacement = CreateDIBSection(target, &info, DIB_RGB_COLORS,
+                                         &back_pixels, NULL, 0);
   if (!replacement) return false;
   HGDIOBJ displaced = SelectObject(presenter->back_dc, replacement);
   if (!displaced || displaced == HGDI_ERROR) {
@@ -29,6 +39,7 @@ static bool EnsureBackBuffer(Dkc2DesktopPresenter *presenter, HDC target,
     presenter->original_bitmap = displaced;
   }
   presenter->back_bitmap = replacement;
+  presenter->back_pixels = (uint8_t *)back_pixels;
   presenter->width = width;
   presenter->height = height;
   return true;
@@ -74,6 +85,11 @@ bool Dkc2DesktopPresent(Dkc2DesktopPresenter *presenter, HDC target,
                     bitmap_info, DIB_RGB_COLORS, SRCCOPY) == (int)GDI_ERROR)
     return false;
 
+  if (presenter->overlay_draw) {
+    GdiFlush();
+    if (!presenter->overlay_draw(presenter->overlay_user, presenter->back_pixels,
+                                 client_width, client_height)) return false;
+  }
   return BitBlt(target, client->left, client->top, client_width, client_height,
                 presenter->back_dc, 0, 0, SRCCOPY) != FALSE;
 }
