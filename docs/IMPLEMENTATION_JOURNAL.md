@@ -5686,3 +5686,30 @@ apart show Kiddy holding the seated pose, and the live trace confirms semantic
 40 / pose $3EE0 at the stable origin (90,128). Then relaunched the bundle
 normally and restored the user's original quick-save on Squitter; both player
 input sources remain gamepad. No commits were made.
+
+## 2026-09-12 - Native macOS v0.0.6 fork release
+
+The work since v0.0.5 was packaged for the `elliotttate/DKC2Recomp` fork
+as the v0.0.6 release: the CRT television display, the logical pause-menu
+placement on Retina windows, and the optional Donkey Kong and Kiddy Kong
+character slots with their mounted, carry, throw, ground-attack, tag and
+recovery presentation. The three pieces of work had accumulated in one
+working tree and were split into separate commits before the release,
+each compiled and unit-tested on its own; the parent repository still pins
+the presentation runtime to `elliotttate/snesrecomp` at commit
+`3a929cd30336f2b3a077df17912719be63142299`. No Windows build was
+refreshed for this release; the `v0.0.5-r2` Windows archive remains the
+most recent one and predates these features.
+
+The release app is an arm64 macOS bundle, version 0.0.6, with bundled
+SDL2 and a strict deep-valid ad-hoc signature. Its executable SHA-256 is
+`068370009adcccec5feceeb7a904f97c3667527380202ef66d503055d2f5be53`.
+The ROM-free `DKC2Recomp-v0.0.6-macOS-arm64.zip` archive has SHA-256
+`20947ee9ee4bc64df13b2aeae68440288811f8e6b5b263bc8c4c8258352a6094`.
+Extraction into a clean temporary directory preserved both the version and
+the signature, the extracted executable was byte-identical to the packaged
+build, and it completed a hidden 180-frame run at 16:9 with the CRT
+display on. The configured macOS suite passed 57/57 immediately before
+packaging, including the CRT smoke run, the CRT model, the overlay layout,
+the Project Kongs importer, and the Project Kongs runtime checks. The
+archive contains no ROM, no character pack, and no configuration file.

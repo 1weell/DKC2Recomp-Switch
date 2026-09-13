@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.0.6 - 2026-09-12
 
 - Fixed Kiddy rapidly alternating upright/horizontal hurt poses after a team
   throw. His recovery now sits up once and holds until native following

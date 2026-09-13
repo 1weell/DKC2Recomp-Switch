@@ -83,16 +83,17 @@ disagree while its data is intact.
 
 ### Native macOS release
 
-1. Download `DKC2Recomp-v0.0.5-macOS-arm64.zip` from
+1. Download `DKC2Recomp-v0.0.6-macOS-arm64.zip` from
    [Releases](../../releases) and extract it.
 2. Open `DKC2Recomp.app` and select your own legally obtained North American
    v1.0 ROM. The ROM remains outside the application bundle.
 
-The v0.0.5 Mac archive is an ad-hoc-signed Apple-silicon build and is not
-notarized. The `v0.0.5-r2` release pairs its display-locked frame pacing and save
-unlock tool with a refreshed Windows build from the same runtime source. If
-Gatekeeper quarantines the downloaded archive, open the app from Finder with
-**Control-click > Open** and confirm once.
+The v0.0.6 Mac archive is an ad-hoc-signed Apple-silicon build and is not
+notarized. It adds the CRT television display, the Retina pause-menu fix, and
+the optional Donkey/Kiddy character slots; the most recent Windows build is
+the `v0.0.5-r2` archive, which predates them. If Gatekeeper quarantines the
+downloaded archive, open the app from Finder with **Control-click > Open** and
+confirm once.
 
 ### Native macOS source build
 
