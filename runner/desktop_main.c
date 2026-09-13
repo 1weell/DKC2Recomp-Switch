@@ -1,3 +1,4 @@
+#include "dkc2_kongs.h"
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <commdlg.h>
@@ -799,6 +800,7 @@ static int RunDesktop(const char *rom_path,
    * changing the process working directory cannot invalidate its path. */
   (void)snesrecomp_anchor_to_exe_dir();
 
+  Dkc2KongsInitialize();
   RtlRegisterGame(Dkc2GameInfo());
   if (!SnesInit(rom, (int)rom_size)) {
     fprintf(stderr, "snesrecomp rejected the verified ROM\n");

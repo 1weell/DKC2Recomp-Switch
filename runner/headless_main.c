@@ -1,3 +1,4 @@
+#include "dkc2_kongs.h"
 #include "dkc2_game.h"
 #include "dkc2_video.h"
 #include "input_playback.h"
@@ -478,6 +479,7 @@ int main(int argc, char **argv) {
       Dkc2VideoSetEdgePolicy(edge_policy);
     }
   }
+  Dkc2KongsInitialize();
   RtlRegisterGame(Dkc2GameInfo());
   if (!SnesInit(rom, (int)rom_size)) {
     fprintf(stderr, "snesrecomp rejected the verified ROM\n");

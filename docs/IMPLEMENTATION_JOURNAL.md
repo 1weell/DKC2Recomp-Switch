@@ -5447,3 +5447,242 @@ repositioned by its title bar without snapping back. The complete macOS suite
 passed all 55 tests both before and after the change, the native app was rebuilt
 and ad-hoc signed, and the owner confirmed the live menu behavior on the Retina
 window.
+
+
+## 2026-09-05 - Optional Donkey and Kiddy character slots
+
+The requested Project Kongs integration adds independent Donkey/Kiddy choices
+for the Diddy and Dixie slots in Pause > Characters. Default remains Original.
+The local importer produces an external pack; the host renders its decoded
+sprites inside native OBJ composition. Original DKC2 abilities are retained,
+including the Dixie slot's helicopter spin. The repository and app bundle
+contain no imported graphics. Contributor and author-reported MIT provenance
+is recorded under `third_party/project_kongs/`.
+
+The existing CRT/menu working-tree changes were preserved. Baseline validation
+passed all 55 configured CTest cases. The importer and runtime add synthetic
+coverage for split DMA tile layouts, visual calls/loops/carry commands, binary
+bounds and transactionality, OAM identity, taller replacement bounds, temporary
+palette restoration, and disabled no-op behavior.
+
+The first moving-state audit exposed current WRAM being ahead of OAM. Complete
+committed-layout matching replaced the initial current-pose assumption. A
+36-state, 120-frame-per-state comparison then completed with zero unmatched
+visible layouts and identical WRAM/VRAM/CGRAM/OAM/audio fingerprints between
+original and Donkey/Kiddy runs. Native-rendered contact sheets were inspected
+for ship deck, water, rope, hook, bramble and boss scenes. Full-game completion
+and every special animation are not established by those state checks.
+
+
+The moving audit added walking, jumping, rolling, direction changes, team
+swapping, climbing and swimming input for 700 frames from every preserved
+state. It exposed clipped compound layouts and a one-frame 97-pixel follower
+reattachment; matching all submitted pieces of a known layout fixed those
+cases without guessing sprite ownership. Loading the user's current live
+save additionally exposed the separate animal rider at `$006C`, which now
+uses the chosen Kong while retaining the original animal sprite and behavior.
+The final 37-state 16:9 replay passed with zero unmatched visible layouts and
+zero changed WRAM/VRAM/CGRAM/OAM/audio fingerprints. This is 25,900 frames per
+configuration, compared against the same input with original characters.
+
+The native Characters tab was exercised through keyboard navigation: the
+646-frame pack was detected, Donkey + Kiddy changed both slot selectors, and
+Original pair restored Diddy/Dixie. The selected pair was then restored to
+Donkey + Kiddy and persisted across closing the app. The actual shared PPU
+submodule remains clean; CMake's build-local adapter has unique-anchor drift
+checks. Source/game-data separation and contributor provenance are documented
+in `docs/PROJECT_KONGS.md` and `third_party/project_kongs/`.
+
+Final validation: all 57 configured CTest cases passed (55 baseline plus the
+two character suites), the canonical macOS app rebuilt with `MACOS_BUILD_OK`,
+and deep/strict ad-hoc signature verification passed. The reversed Kiddy/Donkey
+pair also passed the 37-state, 700-frame input audit at native 4:3 with zero
+machine differences or unmatched visible layouts. Full-game completion,
+original Donkey/Kiddy mechanics and exhaustive rare-pose coverage remain
+unverified/outside the implemented presentation feature.
+
+The final signed canonical app was relaunched and the user's existing Quick
+Load state was loaded through the native Game menu. Live rendering showed
+Kiddy riding Squitter with the replacement retained. Donkey/Kiddy choices
+survived restart; the app was left paused on Characters with that pair selected.
+
+## 2026-09-05 - Correct mounted Donkey/Kiddy presentation
+
+The owner reported incorrect animal-rider animation. Reproduction in the live
+Squitter save showed Kiddy looping the crouched mount frames. The first adapter
+also reused the original Kong's attachment and omitted the animal-driven
+compound frame selection. The prior state hashes and OAM-ownership checks did
+not establish visual correctness.
+
+Pack version 2 imports five per-character attachment points, dedicated mounted
+idle/movement sequences, and animal/rider pairs from commands `$85/$86`, including
+explicit offsets. Host rendering reads the live leader's animal animation and
+graphic to select jump/landing poses; holding an animal frame holds its rider
+pose. Attachment deltas preserve native bobbing and mirror with committed OAM
+facing. Host-only rider clocks reset on movement changes and frame-counter
+discontinuities and do not advance on repeated presentation of the same frame.
+Unmounted rendering and original game state remain unchanged.
+
+Kiddy's seated sequence replaces the Squitter crouch callback loop. His
+unlabelled movement tail is separated from idle, and the reference's borrowed
+Diddy/Rattly frame is adapted to Kiddy's seated art with a seven-pixel frame
+bottom correction. Version 1 packs remain loadable for unmounted characters;
+the menu asks for re-import to enable corrected riders. The installed private
+pack now contains 655 frames, 218 sequences and 172 compound pose records.
+
+Validation: all 57 configured CTest cases passed before and after this fix.
+Synthetic additions exercise signed attachments for both slots and all five
+mount types, mirroring, animation phase/reset/hold behavior, compound offsets,
+branch extraction, and truncated/malformed version 2 packs. Two 37-state,
+700-frame-per-state input audits (Donkey/Kiddy at 16:9 and the reversed pair at
+4:3) reported zero machine-state differences and zero unmatched visible
+layouts. Private contact sheets compared both replacements against original
+Squitter, Rambi and Squawks poses, including Rambi jumps/landings and facing
+changes. Rattly and Enguarde live gameplay remain unverified by this corpus.
+
+The canonical macOS bundle rebuilt with `MACOS_BUILD_OK` and passed deep/strict
+signature verification. It was quit and relaunched through its exact bundle
+path; the existing quick save was loaded through Game > Quick Load State.
+Live inspection verified seated Kiddy and Donkey on Squitter, selected through
+the actual Characters menu, which reported 655 loaded frames. The Donkey/Kiddy
+pair was restored and the rebuilt game left running. Changes remain uncommitted;
+all imported data and capture artifacts remain outside Git.
+
+## 2026-09-05 — Pause, ground attacks and barrel attachment follow-up
+
+The user clarified that the ground attacks are for Donkey and Kiddy, leaving
+original Diddy unchanged, and requested each character's original throw style.
+The supplied screenshot showed Donkey's hands raised above a barrel still
+positioned against his chest. Presentation-only substitution retained the
+original slot's carry offsets and callback timing; native Start pause also
+continued the host frame clock used for the replacement animation.
+
+Pack v3 adds private carry offsets and attack sequences (685 frames, 221
+sequences, 172 mounted records, 63 hand attachments). The animation clock now
+freezes on $08C2 bit $0040. Six ROM-verified simulation hooks connect hand
+positions and throw timing to the existing object lifecycle, and add Down + Y
+Donkey hand slap / Kiddy body slam. Kiddy uses his existing somersault and
+landing poses; downward enemy contact retains the defeat and suppresses the
+ordinary bounce so the slam continues to the ground.
+
+Initial integration testing exposed two issues before delivery: reference
+address comments differed from the supported ROM, and compiled direct calls
+bypassed pre-opcode hooks. Actual ROM signatures established the correct
+addresses. A checked adapter now routes four short optional callbacks through
+the existing paired interpreter interface; shared runtime files remain clean.
+A separate test caught the animation-cursor convention while shortening the
+Dixie-slot windup. No external assembly scripts were executed.
+
+The baseline complete CTest suite passed 57/57. Synthetic cases cover malformed
+v3 packs, signed attachments, freeze/resume, hand-slap impacts, body-slam
+landing and stomp continuation, damage/mount cancellation, both facings, and
+throw callback timing. A 37-state private no-input comparison passed with zero
+WRAM/VRAM/OAM/CGRAM/audio differences and zero unmatched visible layouts.
+Fresh-boot Pirate Panic replays exercise real pickup, overhead/underhand
+release, and enemy contact; private captures and logs are under
+`/tmp/dkc2-kongs/boot-route`. Final bundle verification is recorded below.
+
+The first packaged ground-attack/barrel build passed 57/57 CTest checks and
+`MACOS_BUILD_OK`. Before final delivery, the user reported inherited helicopter
+flight and missing tag gestures. Flight now exits after the shared run-speed
+update, with a separate recovery path for an already-gliding save/menu change.
+Pack v4 (707 frames / 225 sequences) supplies both handoff roles. The native
+paired commands leave the outgoing animation ID at idle; a shared clock now
+drives both replacement poses until the native 44/26-frame transfer.
+
+The user additionally supplied DKC1Recomp and DKC3Recomp as references. Their
+animation registry/character dispatch, plus the DKC3 disassembly's distinct
+glide constants, corroborate the separation of character behavior from slots.
+No further source or game assets were vendored. This is not a complete
+transplant: movement constants, ordinary collision sizes and DKC3 water-skip,
+team/floor-breaking mechanics remain explicit roadmap work.
+
+Focused synthetic checks pass for both handoff roles, both original slots,
+pause/resume, v4 truncation, original-character flight preservation and
+mid-glide recovery. A real Toxic Tower replay recorded 83 original Dixie
+glide frames versus zero for either replacement; both replacements landed
+normally. Two-way tags passed in both pair orders and facings with zero
+unmatched sprites. The 37-state preservation corpus also passed in both
+pair orders (74 comparisons, zero machine or visible-layout mismatches).
+
+Final v4 packaging emitted `MACOS_BUILD_OK`; all 57 CTest checks passed, and
+deep/strict bundle-signature verification passed. Relaunched the exact
+`build/macos/DKC2Recomp.app`, verified Pause > Characters reports 707 frames
+and the saved Donkey/Kiddy pair, and restored the user's quick-save into
+60 FPS gameplay with Kiddy riding Squitter. Source changes remain uncommitted;
+the pack, captures, recordings and executables remain private/untracked.
+
+
+### September 5: paired team pickup and throws
+
+The next user report concerned one replacement picking up and throwing the
+other. Deterministic Toxic Tower replays reproduced independent follower
+animation and attachment. The source's Donkey top idle still points to Diddy;
+its Kiddy bottom throw omits the original DKC3 paired contact operands.
+Pack v5 now imports 715 frames / 233 sequences, including four top-role states
+per replacement. DK adapts seated/tumbling art; Kiddy uses dedicated team art.
+The renderer anchors the top to the displayed carrier after validating each
+OAM owner. Two additional simulation callbacks prepare/release the native
+partner at phases 15/18, preserving the native collision/velocity path and
+setting the actual launch position to the matching hands. The callback seeker
+now understands ten-byte paired commands and consumes preparation once.
+
+Baseline CTest passed 57/57. Synthetic tests cover v5 truncation, top movement
+with unchanged follower animation ID, displayed-origin attachment, mirroring,
+pause/drop, both original slots and carrier choices, callback ordering and
+recovery. Eighteen private gameplay replays cover both choices/slots/facings,
+forward/upward throws and mid-throw Start pause: all completed, each released
+once at 15/18, and no visible layout was unmatched. Captures were inspected
+under /tmp/dkc2-kongs/team-matrix. Both 37-state no-input preservation runs
+passed (74 comparisons, zero machine or layout mismatches).
+
+Mixed original/replacement partner placement and DKC3 floor-breaking mechanics
+remain separate work. No assets, saves, captures or binaries were added to
+Git; the shared snesrecomp runtime was not modified. Final packaging and live
+app verification follow below.
+
+Final v5 packaging emitted `MACOS_BUILD_OK`; the complete suite passed 57/57
+and deep/strict codesign verification passed. Installed pack SHA-256:
+`9238d533b8be62c6afc9ef76cb58b48ab563f040279614481ea7df2faf2c943c`.
+The exact rebuilt bundle was launched, Characters showed 715 loaded frames
+with Donkey/Kiddy selected, gamepad input was restored, and the user's
+quick-save resumed at 60 FPS with Kiddy on Squitter. Live app checks establish
+pack/menu loading and save restoration; detailed team motion was verified
+from the deterministic gameplay render captures above. No commits were made.
+
+
+### September 5: Kiddy post-throw jitter correction
+
+The user reported visible twitching after Donkey threw Kiddy. Captured the
+current native snapshot and restored the previous quick-save file immediately.
+The exact state reproduces a stationary follower in state $21, semantic 40,
+with $D7A zero. The source borrows Diddy's team-stunned animation; the importer's
+hurt fallback alternated Kiddy upright/horizontal hit poses every six ticks.
+This survived the previous release/layout checks, which did not establish a
+correct sustained recovery pose.
+
+The importer now isolates Kiddy’s four grounded sit-up frames and holds the
+seated final frame. Death/cry callbacks and frames are excluded. Ordinary
+hurt mapping and native throw/rejoin physics are unchanged. Pack format and
+counts remain v5, 715 frames / 233 sequences; earlier packs need regeneration.
+The trace includes displayed origins to distinguish translation jitter from
+pose substitution. Synthetic tests cover the isolated sequence, held recovery,
+pause, long waits and native following resumption.
+
+The exact snapshot's 180-frame replay now progresses to one seated pose and
+holds it, with a constant displayed origin (90,128). A catch-up/jump replay
+exits semantic 40, resumes native follow animations, and matches the earlier
+pack's WRAM, VRAM, CGRAM, OAM, source OAM and audio fingerprints. Eighteen
+team-throw replay cases still each release exactly once with zero unmatched
+visible actors. Private evidence is under /tmp/dkc2-kongs/throw-jitter.
+Baseline full CTest passed 57/57; final packaging/live verification follows.
+
+Final macOS packaging emitted `MACOS_BUILD_OK`, all 57 CTest tests passed,
+and deep/strict bundle signature verification passed. Installed the regenerated
+private pack with SHA-256
+`5f5e8e0d452225ad3a7f730b429b8acb0ada19265e5f3e9d659f56bbcf9cb0b4`.
+The rebuilt app loaded the exact reported snapshot: screenshots several seconds
+apart show Kiddy holding the seated pose, and the live trace confirms semantic
+40 / pose $3EE0 at the stable origin (90,128). Then relaunched the bundle
+normally and restored the user's original quick-save on Squitter; both player
+input sources remain gamepad. No commits were made.

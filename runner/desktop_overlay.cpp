@@ -1,3 +1,5 @@
+#include "../recomp-ui/src/third_party/tinyfiledialogs.h"
+#include "dkc2_kongs.h"
 #include "desktop_overlay.h"
 
 #include "desktop_input.h"
@@ -565,6 +567,58 @@ static void DrawMainPage(Dkc2DesktopOverlay *overlay) {
         &overlay->model, kDkc2OverlayActionQuit);
 }
 
+static void DrawCharactersPage(Dkc2DesktopOverlay *overlay) {
+  ImGui::TextUnformatted("Playable Kongs");
+  ImGui::Separator();
+  ImGui::TextWrapped("Choose who fills each character slot. Hold Down and press Y on the "
+                     "ground for Donkey's hand slap or Kiddy's body slam. Each uses his "
+                     "own barrel throw. Donkey and Kiddy do not helicopter-float. "
+                     "Select swaps Kongs with a tag handoff.");
+  ImGui::Spacing();
+  bool changed = false;
+  ImGui::BeginDisabled(!Dkc2KongsReady());
+  for (int slot = 0; slot < 2; ++slot) {
+    const char *labels[] = {slot == 0 ? "Diddy Kong (original)" : "Dixie Kong (original)",
+                            "Donkey Kong", "Kiddy Kong"};
+    int choice = Dkc2KongsChoice(slot);
+    if (ImGui::Combo(slot == 0 ? "Diddy slot" : "Dixie slot", &choice, labels, 3)) {
+      Dkc2KongsSetChoice(slot, choice);
+      changed = true;
+    }
+  }
+  if (ImGui::Button("Donkey + Kiddy")) {
+    Dkc2KongsSetChoice(0, kDkc2KongDonkey);
+    Dkc2KongsSetChoice(1, kDkc2KongKiddy);
+    changed = true;
+  }
+  ImGui::EndDisabled();
+  ImGui::SameLine();
+  if (ImGui::Button("Original pair")) {
+    Dkc2KongsSetChoice(0, kDkc2KongOriginal);
+    Dkc2KongsSetChoice(1, kDkc2KongOriginal);
+    changed = true;
+  }
+  ImGui::Spacing();
+  ImGui::TextWrapped("Your choice is remembered. Resume to apply it; use the game's "
+                     "usual team-swap button to change the active Kong.");
+  ImGui::Separator();
+  ImGui::TextWrapped("%s", Dkc2KongsStatus());
+  if (ImGui::Button("Load character pack...")) {
+    const char *filters[] = {"*.dkc2kongs"};
+    const char *path = tinyfd_openFileDialog("Select Project Kongs character pack",
+        Dkc2KongsPath(), 1, filters, "DKC2 character pack", 0);
+    if (path) {
+      const bool loaded = Dkc2KongsLoad(path);
+      changed = loaded || changed;
+      Dkc2DesktopOverlaySetStatus(overlay, Dkc2KongsStatus(), loaded);
+    }
+  }
+  if (changed && !Dkc2KongsSaveSettings())
+    Dkc2DesktopOverlaySetStatus(overlay, "Character choices applied, but could not be saved.", false);
+  ImGui::Spacing();
+  ImGui::TextDisabled("Project Kongs: H4v0c21, Mattrizzle, BlueImp; custom sprites: Phyreburnz.");
+}
+
 static void DrawSettingsPage(Dkc2DesktopOverlay *overlay) {
   RecompLauncherCSettings &settings = overlay->settings;
   ImGui::TextUnformatted("Display");
@@ -1109,6 +1163,10 @@ extern "C" void Dkc2DesktopOverlayRenderOpenGl(
     }
     if (ImGui::BeginTabItem("Settings")) {
       DrawSettingsPage(overlay);
+      ImGui::EndTabItem();
+    }
+    if (ImGui::BeginTabItem("Characters")) {
+      DrawCharactersPage(overlay);
       ImGui::EndTabItem();
     }
     if (ImGui::BeginTabItem("Assist Tools / Cheats")) {

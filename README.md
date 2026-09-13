@@ -20,6 +20,29 @@ fallback. SNES hardware outside the main CPU—the PPU,
 SPC700/S-DSP, DMA/HDMA, controllers, and cartridge mapping—is modeled by the
 shared runtime.
 
+## Optional Donkey and Kiddy characters
+
+Open the in-game pause menu with **Escape**, then choose **Characters**.
+Each original character slot can use Donkey Kong or Kiddy Kong; **Donkey +
+Kiddy** selects both, and **Original pair** restores Diddy and Dixie. The
+game remembers your choices between runs.
+Animal riders use mount-specific seated/hanging poses and attachment points.
+Hold **Down + Y** on the ground for Donkey's hand slap or Kiddy's body slam.
+Barrel carrying and throwing use each character's original style and timing.
+Neither replacement inherits Dixie's helicopter flight. **Select** plays a
+paired tag handoff when swapping Kongs. Donkey/Kiddy team pickup and throws
+use synchronized poses and shoulder/hand placement (private pack v5).
+Kiddy uses a seated recovery after a missed throw; regenerate earlier packs
+if he repeatedly snaps between hurt poses while waiting for the leader.
+Other movement/collision still uses
+DKC2's engine; this is not a complete DKC1/DKC3 mechanics transplant.
+Replacement animations freeze during Start or Escape pause. Re-import older
+packs for these changes.
+
+Create the private character pack from your own Project Kongs checkout using
+[the import instructions](docs/PROJECT_KONGS.md), then select **Load character
+pack...**. Game art is never included in this source tree or the app bundle.
+
 ## Quick start
 
 ### Windows release

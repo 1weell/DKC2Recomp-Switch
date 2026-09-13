@@ -136,6 +136,7 @@ if(DKC2_BUILD_SNESRECOMP)
             "snesrecomp is not initialized; run git submodule update --init --recursive")
     endif()
     include(${SNESRECOMP_ROOT}/runner/runner.cmake)
+    include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/ProjectKongsPpu.cmake)
     # SDL2 and recomp-ui are portable dependencies shared by the launcher and
     # the gameplay host on Windows, Linux, and macOS. Prefer a package config
     # (vcpkg/Homebrew commonly provide one), then accept a distribution module.
@@ -163,6 +164,18 @@ if(DKC2_BUILD_SNESRECOMP)
             "No private generated sources found; run scripts/generate_snesrecomp.py "
             "or scripts/generate_snesrecomp.ps1 first")
     endif()
+    find_package(Python3 COMPONENTS Interpreter REQUIRED)
+    execute_process(COMMAND "${Python3_EXECUTABLE}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/scripts/apply_dkc2_kongs_overrides.py"
+        --generated-dir "${DKC2_SNESRECOMP_GEN_DIR}"
+        RESULT_VARIABLE _kongs_result OUTPUT_VARIABLE _kongs_units
+        OUTPUT_STRIP_TRAILING_WHITESPACE)
+    if(NOT _kongs_result EQUAL 0)
+        message(FATAL_ERROR "Project Kongs generated callback integration failed")
+    endif()
+    string(REPLACE "\n" ";" _kongs_units "${_kongs_units}")
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+        "${CMAKE_CURRENT_SOURCE_DIR}/scripts/apply_dkc2_kongs_overrides.py" ${_kongs_units})
     # These project-owned hosts have no SDL dependency or event thread. Keep
     # the portable snesrecomp runtime while providing their small host adapters.
     list(REMOVE_ITEM SNESRECOMP_RUNNER_SOURCES
@@ -612,6 +625,10 @@ endif()
 if(BUILD_TESTING)
     find_package(Python3 QUIET COMPONENTS Interpreter)
     if(Python3_Interpreter_FOUND)
+        add_test(NAME project_kongs_import
+            COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_project_kongs.py)
+        set_tests_properties(project_kongs_import PROPERTIES LABELS "unit;tooling;characters")
         add_test(NAME audio_pcm_compare
             COMMAND ${Python3_EXECUTABLE}
                 ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_compare_audio_pcm.py)
@@ -970,6 +987,13 @@ if(BUILD_TESTING)
     # repository while the upstream snesrecomp pull request is still pending.
     # A source-only checkout without an initialized submodule simply omits it.
     if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/snesrecomp/runner/src/snes/interp816.c")
+        add_executable(test_kongs tests/test_kongs.c runner/dkc2_kongs.c)
+        target_include_directories(test_kongs PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/runner
+            ${CMAKE_CURRENT_SOURCE_DIR}/snesrecomp/runner/src)
+        dkc2_enable_project_warnings(test_kongs)
+        add_test(NAME project_kongs_runtime COMMAND test_kongs)
+        set_tests_properties(project_kongs_runtime PROPERTIES LABELS "unit;characters;native")
         add_executable(test_snesrecomp_interp816
             snesrecomp/tests/interp816/interp816_test.c
             snesrecomp/runner/src/snes/interp816.c)

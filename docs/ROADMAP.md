@@ -133,6 +133,13 @@ Exit criterion: reach and render the title screen with correct audio and input.
 
 ## Milestone 3 — First level
 
+- [x] Add optional Donkey/Kiddy character presentation, private asset import,
+      persisted pause-menu choices, and source-only/saved-state verification.
+      Mounted presentation includes per-animal attachments, seated/hanging
+      poses, movement transitions and compound animal/rider frame selection.
+      These slots retain DKC2 abilities; original Donkey/Kiddy mechanics and
+      replacement world-map/cutscene/audio assets are outside this feature.
+
 - [x] Implement file selection and 2 KiB SRAM persistence, including an
       automatic previous-save backup and test isolation.
 - [x] Add a deterministic private input-recording/replay harness and a Pirate
@@ -393,3 +400,25 @@ Exit criterion: reach and render the title screen with correct audio and input.
       widescreen is now also opt-in and remains incomplete outside its audited
       screen policies; geometric CRT shaders and asset replacement remain
       future work.
+
+### Optional Kong follow-up, September 5
+
+- [x] Freeze normal and mounted replacement animations on SNES Start pause.
+- [x] Bind carried barrels to imported hand positions and retain distinct
+      overhead/underhand throws, with character-specific release timing.
+- [x] Add grounded Down + Y hand slap / body slam with native collision and
+      audio responses, preserving original Diddy/Dixie choices.
+- [x] Keep legacy packs and saves readable; re-import for new behavior.
+- [x] Prevent inherited helicopter flight in either replacement slot and
+      cancel a saved/menu-switched glide without breaking original Dixie.
+- [x] Animate both tag participants in either slot and facing direction.
+- [x] Synchronize Donkey/Kiddy team pickup/carry/throw poses, with native
+      release from the matching hands, both slots/facings and pause support.
+- [ ] Adapt partner placement for mixed original/replacement teams.
+- [x] Replace Kiddy's post-throw hurt-loop fallback with a held seated
+      recovery, verified from the user's reported lava-stage snapshot.
+- [ ] Complete character-specific movement constants, ordinary collision
+      geometry, Kiddy water skipping and DKC3 team/floor-breaking behavior.
+- [ ] Port the reference hand-slap bonus-banana spawning if desired.
+- [ ] Extend validation beyond the current mounted corpus to live Rattly and
+      Enguarde; DKC3 floor-breaking mechanics remain unported.

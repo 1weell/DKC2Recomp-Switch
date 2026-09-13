@@ -1106,3 +1106,73 @@ free passage when it is set. `$08F9` (record byte `$DB`) counts newly
 cleared levels numbered 196 to 200, incremented at `$B4:B26B`; the map
 init at `$B4:80CD` compares it with five, runs a one-off event, and sets
 `$08FC |= $0C`, which is the Krocodile Kore opening.
+
+
+## Optional Kong sprite presentation
+
+The character adapter changes host OBJ rasterization, not SNES DMA payloads.
+The original OAM can lag current actor WRAM by one update; matching only the
+current animation header causes intermittent replacement failures. Match the
+committed OAM layout and derive its origin before rendering. Temporary CGRAM
+replacement is restored before each HDMA step, preserving the guest palette.
+Replacement objects use native priority/window/color-math composition. Their
+host raster bypasses their original compound sprite's sliver count; this is
+an optional presentation policy, not a claim of SNES sprite-limit accuracy.
+
+Mounted presentation must distinguish the rider at `$006C` from the leader at
+`$0593`, whose original player object renders the animal. `$0D72/$0D74` are
+the native rider base offset; `$0D76/$0D78` include animation bobbing. External
+animation commands `$85/$86` pair animal and rider graphics; `$86` additionally
+sets offsets. The presentation adapter reads that data and the live animal
+graphic without executing the reference callbacks or modifying these fields.
+Matching OAM ownership alone does not prove that a replacement rider pose is
+correct; mounted motion and attachment need image-backed validation.
+
+## Replacement Kong pause, hands and ground attacks
+
+SNES Start pause sets WRAM $08C2 bit $0040 while console frames continue.
+Replacement animation clocks must exclude those frames; host-frame count alone
+is insufficient. Escape pause already stops simulation.
+
+The US v1.0 attachment adapter runs at B3:9FE7 before native carried-object
+positioning. Throw callbacks B9:D8AC/D967/DFD5 preserve the native stack and
+object lifecycle while using donor timing and hand offsets. B9:D9E0 adjusts
+forward velocity before native terrain correction. Actor dispatch B8:9616 and
+physics continuation B8:995F support ground attacks without inserting invalid
+actor states. Some reference-project address comments belong to a different
+layout and must not be used as ROM addresses without verification.
+
+The reference adds a clipping entry after the base ROM's final attack box;
+that entry is not readable from the unpatched ROM. The host expresses its
+geometry explicitly and reads enemy boxes from the actual ROM. Impacts use
+native defeat bit 8 and the existing bounded sound queue. Hardware comparison
+of the new host moves remains outside this milestone; these are enhancements.
+
+The verified US v1.0 glide action starts at B8:C921. Its initial JSR updates
+shared run speed; B8:C924 then starts flight-specific checks. Replacements
+redirect that boundary to the native RTS at B8:C92D. An existing glide is
+semantic 11/state 6, with control variables $16B2/$16D8 and gravity/terminal
+speed at +8/+10. Normal values are restored from the actor's ROM constants
+pointer $8E-$90. Animal and original-character paths are excluded.
+
+Native swap animations 73/236 call B9:E164/B9:E1E4 at 44/26 elapsed frames.
+Paired commands can change the outgoing graphic without changing that actor's
+animation ID, so independent idle clocks cannot represent a tag handoff.
+Replacement handoff art uses one pause-aware clock for both participants.
+
+Team throws use native animation 38/201. Their base ROM streams begin with
+ten-byte paired $8A commands, followed by eight-byte $8B carry commands.
+B9:DCEA selects the inactive Kong's thrown animation; B9:D8BE assigns native
+forward/upward velocity, enables collision and clears $D7A. They are separate
+from the barrel release at B9:D967. Their callback cursor points to the next
+opcode, and preparation must not be sought again once consumed. Host team
+presentation retimes only the replacement carrier, preserving native throw
+collision/terrain and excluding animal riders. No hardware parity is claimed
+for this optional enhancement.
+
+The reported Kiddy jitter snapshot had the follower in native state $21,
+animation $CB (Dixie-slot semantic 40), held pointer zero and constant world
+position. Native graphics $05B8/$05BC/$05C0 form a waiting cycle. Mapping
+that state to Kiddy hurt graphics $3F68/$3F7C instead produced a repeating
+six-tick upright/horizontal snap. The corrected private projection holds its
+seated frame; it does not change the machine's waiting or recovery behavior.

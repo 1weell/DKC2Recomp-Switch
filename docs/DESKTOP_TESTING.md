@@ -532,3 +532,20 @@ Manual acceptance must cover:
 4. enemies spawning, animating, colliding, and despawning correctly in both
    margins; and
 5. death/restart, bonus entry, goal, map, and save-state transitions.
+
+
+### Optional Kong team animation checks
+
+With a v5 private pack, test Donkey carrying Kiddy and Kiddy carrying Donkey
+in both original slots. Press the SNES A button to team up, walk and turn in
+both directions, jump/land, then press Y for a forward throw or Up + Y for an
+upward throw. Inspect shoulder placement, the body following the hands during
+windup, release, and recovery. Pause with Start during windup, resume, and
+confirm exactly one release; dropping, damage and restoring a snapshot must
+abandon the old paired placement. Repeat with original choices for native
+behavior. Mixed original/replacement partner placement remains native.
+
+Also leave the thrown Kong waiting for several seconds after a missed throw.
+Kiddy must sit up once, hold that pose without upright/horizontal snapping,
+and return to following when the leader catches up. Check that a save loaded
+directly into this waiting state behaves the same way.

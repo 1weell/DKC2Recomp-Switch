@@ -1404,3 +1404,111 @@ external, append-only kit and preserves the SRAM that existed at recording
 start beside each route. That paired SRAM is supplied to deterministic replay,
 preventing later personal progress from changing a diagnostic run. ROMs,
 saves, recordings, memory dumps, and captures remain outside Git.
+
+
+## Optional playable Kong presentation
+
+`runner/dkc2_kongs.c` loads a bounded, versioned private sprite pack. The
+project-owned importer reads Project Kongs graphics and animation declarations
+as data, decodes the compound 4-bpp frames and projects visual animation loops;
+it never executes assembly commands or imports the ROM hack's gameplay code.
+Each original Diddy/Dixie slot has an independently persisted replacement.
+Original abilities, hitboxes, game state, animal transformations and audio stay
+under the original game program's ownership.
+
+DKC2 actor types `$00E4`/`$00E8`, graphics at actor offset `$18`, properties at
+`$12`, and animation IDs at `$36` identify the two playable sprites. Dixie's
+animation IDs have a `$00A3` offset. Actor WRAM can advance ahead of committed
+OAM; the adapter therefore verifies every submitted piece of the displayed compound layout
+against the ROM graphics directory at `$BC:8000` and recovers its displayed
+origin. Palette and reserved tile allocation identify candidate OAM pieces;
+geometry, size and tile order must all match before any piece is replaced.
+Partly clipped sprites may submit only a subset of a known compound layout.
+An unrecognized layout remains the original sprite.
+While mounted, `$006C` identifies the separate Kong rider (types `$0190`
+through `$01A0`); its semantic animation identifies the original slot. The
+original player record then renders the animal and is left unchanged.
+Pack version 2 contains five attachment points per replacement character,
+separate mounted idle/movement sequences, and compound pose records keyed by
+the leader's semantic animal animation and graphic. The adapter subtracts the
+original attachment (`$0D72/$0D74`) from the imported attachment, preserving
+the existing bobbing. Explicit compound offsets instead replace the current
+total (`$0D76/$0D78`). Adjustments are mirrored with the displayed OAM facing.
+Rider movement follows the source callback's leader `$26` predicate for
+Squitter/Rambi; Enguarde stays seated and the other mounts have dedicated poses.
+Kiddy's Squitter rider uses his seated sequence instead of the source's crouch
+mount callback loop; his Rattly pose uses seated art with a frame-origin adaptation.
+
+`cmake/ProjectKongsPpu.cmake` inserts guarded OAM visibility and raster callbacks
+into a build-local copy of the pinned shared PPU. Exact unique anchors fail at
+configure time if the upstream integration drifts. The submodule stays clean.
+The replacement occupies the original object's OAM priority position, before
+background/window composition and main/subscreen color math. Its frame bounds
+control visibility so taller replacement sprites are not clipped to the
+original sprite's first tile. A temporary per-scanline palette is restored
+before HDMA; WRAM, VRAM, OAM and the final CGRAM are unchanged. Unmounted visual
+sequence phase follows the serialized SNES frame counter. Mounted sequences
+have host-only elapsed clocks that restart on mount/movement changes or frame
+counter discontinuities. Repeated presentation of one guest frame does not
+advance them. Compound poses follow the current animal graphic and hold their
+last matching pose while the animal holds that frame. Restore/rewind can restart
+the cosmetic cycle and adds no guest state.
+
+The pause menu owns character selection and pack loading. `kongs.cfg` contains
+the selected pair and external pack path in the platform user-data directory.
+The default is the original pair, and missing/malformed packs cannot replace
+sprites. Invalid replacement loads preserve the previous valid pack. Tests
+cover the binary boundary, sprite identification, visibility, palette restore,
+and disabled behavior; private state/input comparisons cover real gameplay.
+
+## Optional Kong gameplay adapters (September 5 follow-up)
+
+Pack v3 extends the bounded private sprite format with hand-attachment records
+and attack sequences. v1/v2 remain readable. A pause-aware simulation clock
+feeds per-actor animation clocks; repeated presentation never advances them.
+`Dkc2KongsGameplay` runs only at nine verified US v1.0 instruction boundaries.
+It retimes native throw callbacks, updates carried-object hand coordinates and
+adds Donkey's hand slap / Kiddy's body slam using legal native actor states,
+original terrain physics, enemy clipping, defeat flags and the audio queue.
+The renderer still does not mutate WRAM, OAM or VRAM.
+
+Seven generated callbacks can be called directly from compiled code. The
+checked, idempotent `apply_dkc2_kongs_overrides.py` adapter routes these short
+RTS routines through the existing paired interpreter ABI only when the active
+leader is a selected replacement. The shared runtime stays pristine. CMake
+applies the adapter on configuration and rejects missing/changed entry anchors.
+Other code remains on the existing compiled path. Original-pair behavior is
+unchanged; carry and ground-attack WRAM/audio differences are intentional.
+
+Host attack state is canceled on restore instead of changing the save format.
+Kiddy's solo slam is a local DKC2 adaptation, not DKC3 floor-breaking physics.
+Donkey's bonus-banana spawning from the reference hack is not implemented.
+
+Pack v4 adds incoming/outgoing tag sequences. A shared presentation clock
+follows the incoming actor's semantic 73 and also animates its partner, whose
+animation ID can remain idle while native paired-frame commands control it.
+The native 44/26-frame release points and outgoing hop stay authoritative.
+The fifth callback is `glide_action`: the replacement path preserves its
+shared run-speed update, then returns before Dixie's flight logic. Restoring
+an existing glide resets the actor's native gravity and terminal speed before
+resuming its falling animation. This remains a partial mechanics adaptation;
+ordinary movement constants and collision geometry still belong to DKC2.
+
+Pack v5 adds top idle/walk/air/windup sequences 178-181 and replaces DK's
+borrowed top idle with seated DK art. A shared team phase follows carrier
+semantics 29-38 while $D7A names the partner. After matching both native OAM
+owners, the renderer places the top relative to the displayed carrier origin;
+it does not write guest state. Simulation hooks B9:DCEA and B9:D8BE separately
+prepare/release the top at DK/Kiddy phases 15/18 and set its actual launch
+origin. The existing B9:DFD5 callback retains each full recovery sequence.
+The bounded callback seeker handles native paired $8A frames as well as $8B
+carry frames; preparation is consumed once so it cannot prevent release.
+Reset, damage, dropping, mounting and changed selections abandon host action
+state. Mixed original/replacement teams retain native partner placement.
+
+Kiddy's semantic 40 is a dedicated grounded sit-up ending in a held seated
+frame. It is not the generic six-tick hurt loop used by semantic 41. The
+importer isolates four sit-up frames from the supplied sequence, excluding
+its surrounding death/cry actions. This is a pack-data correction within v5;
+the native post-throw waiting state and rejoin logic are unchanged. Diagnostic
+Kong traces now include the recovered displayed origin for jitter checks.

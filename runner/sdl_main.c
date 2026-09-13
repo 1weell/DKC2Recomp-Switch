@@ -1,3 +1,4 @@
+#include "dkc2_kongs.h"
 #ifndef SDL_MAIN_HANDLED
 #define SDL_MAIN_HANDLED
 #endif
@@ -674,6 +675,7 @@ static int RunGame(const char *rom_path,
     ShowError(rom_error);
     return 2;
   }
+  Dkc2KongsInitialize();
   RtlRegisterGame(Dkc2GameInfo());
   if (!SnesInit(rom, (int)rom_size)) {
     free(rom);

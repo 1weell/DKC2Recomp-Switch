@@ -2,6 +2,34 @@
 
 ## Unreleased
 
+- Fixed Kiddy rapidly alternating upright/horizontal hurt poses after a team
+  throw. His recovery now sits up once and holds until native following
+  resumes. Regenerate older packs, including the first v5 import.
+- Fixed Donkey/Kiddy team pickup, carry and throw presentation. Paired poses
+  follow the carrier during movement/jumps, and native throws release from
+  the matching hand position. Private pack v5 adds missing top poses.
+- Removed inherited Dixie helicopter flight from Donkey and Kiddy, including
+  an already-gliding save/menu change. Added paired tag gestures on Select
+  swaps in both slots and directions. Private pack version 4 supplies tag poses.
+- Fixed replacement Kong animations continuing during SNES Start pause.
+  Donkey and Kiddy now have Down + Y ground attacks, with native enemy
+  responses and impact audio. Kiddy continues his slam after stomping an enemy.
+- Corrected barrel attachment, windup, release origin and timing: Donkey
+  throws overhead and Kiddy underhand. Pack version 3 supplies hand offsets
+  and attack poses; older packs remain readable and prompt for re-import.
+
+- Corrected Donkey/Kiddy animal-rider poses and attachment points. Riders now
+  use separate idle/moving cycles and follow the animal's jump/landing frames;
+  Kiddy no longer loops a crouch on Squitter. Re-import legacy character packs
+  for the mounted-animation data in pack version 2.
+
+- Added optional Donkey Kong and Kiddy Kong replacements for either playable
+  slot in Pause > Characters, remembered between runs. A private Project Kongs
+  importer supplies the animation and sprite data. The native OBJ renderer
+  preserves foreground priority, water color math, widescreen placement and
+  original DKC2 gameplay; original movement, collision, abilities and audio
+  remain authoritative. No game data is included in the source or bundle.
+
 - Fixed the in-game ImGui pause window being offset on Retina/high-DPI
   displays by sizing and centering it from ImGui's logical display dimensions.
   It is centered only on first appearance and can now be moved by dragging its

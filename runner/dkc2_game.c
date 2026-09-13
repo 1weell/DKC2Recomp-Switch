@@ -1,5 +1,6 @@
 #include "dkc2_game.h"
 #include "dkc2_hdma.h"
+#include "dkc2_kongs.h"
 #include "dkc2_video.h"
 
 #include "common_cpu_infra.h"
@@ -288,7 +289,24 @@ enum {
   kDkc2NtscFrameMasterClocks = 1364 * 262,
 };
 
+static void Dkc2KongInstruction(CpuState *cpu, uint32_t pc) {
+  const uint32_t redirect = Dkc2KongsGameplay(cpu->ram, g_rom, 0x400000, pc,
+                                            (uint32_t)snes_frame_counter);
+  if (redirect) interp_bridge_pre_opcode_redirect(redirect);
+}
+
 static void Dkc2RunOneFrame(void) {
+  /* These hooks observe US v1.0 player dispatch, carried-object placement,
+   * and throw animation callbacks. They do not replace shared runtime code. */
+  interp_bridge_set_pre_opcode_hook(0xb89616, Dkc2KongInstruction);
+  interp_bridge_set_pre_opcode_hook(0xb39fe7, Dkc2KongInstruction);
+  interp_bridge_set_pre_opcode_hook(0xb9d8ac, Dkc2KongInstruction);
+  interp_bridge_set_pre_opcode_hook(0xb9dcea, Dkc2KongInstruction);
+  interp_bridge_set_pre_opcode_hook(0xb9d8be, Dkc2KongInstruction);
+  interp_bridge_set_pre_opcode_hook(0xb9d967, Dkc2KongInstruction);
+  interp_bridge_set_pre_opcode_hook(0xb9dfd5, Dkc2KongInstruction);
+  interp_bridge_set_pre_opcode_hook(0xb9d9e0, Dkc2KongInstruction);
+  interp_bridge_set_pre_opcode_hook(0xb8c924, Dkc2KongInstruction);
   bool first_frame = !s_cpu_initialized;
   if (s_next_frame_master == 0) {
     s_next_frame_master =
@@ -367,6 +385,7 @@ static void Dkc2LoadExtra(SaveLoadInfo *sli, uint32_t version) {
 
 static void Dkc2OnStateLoaded(uint32_t version) {
   (void)version;
+  Dkc2KongsReset();
   g_cpu.ram = g_ram;
   g_apu_last_sync_master = g_cpu.master_cycles;
   g_snes->beamMasterLast = g_cpu.master_cycles;
@@ -2287,6 +2306,9 @@ void Dkc2DrawPpuFrame(void) {
       SimpleHdma_Init(&channels[channel], &g_dma->channel[channel]);
   }
 
+  Dkc2KongsPrepare(g_ppu, g_ram, g_rom,
+                    g_snes && g_snes->cart ? g_snes->cart->romSize : 0,
+                    (uint32_t)snes_frame_counter);
   const Dkc2HdmaBand *current_band = NULL;
   for (int line = 0; line <= 224; line++) {
     if (band_policies_active) {
@@ -2303,7 +2325,9 @@ void Dkc2DrawPpuFrame(void) {
         g_ppu->hScroll[layer] =
             (uint16_t)(g_ppu->hScroll[layer] + presentation_bias);
     }
+    Dkc2KongsBeginLine(g_ppu);
     ppu_runLine(g_ppu, line);
+    Dkc2KongsEndLine(g_ppu);
     if (presentation_bias != 0) {
       for (unsigned layer = 0; layer < 4; layer++)
         g_ppu->hScroll[layer] =
