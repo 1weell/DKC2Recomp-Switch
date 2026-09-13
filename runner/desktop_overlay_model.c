@@ -114,6 +114,18 @@ bool Dkc2DesktopOverlayModelArmPadCapture(
   return model->pad_capture_armed;
 }
 
+Dkc2DesktopOverlayWindowLayout Dkc2DesktopOverlayWindowLayoutForDisplay(
+    float display_width, float display_height) {
+  Dkc2DesktopOverlayWindowLayout layout;
+  layout.center_x = display_width * 0.5f;
+  layout.center_y = display_height * 0.5f;
+  layout.width = display_width < 760.0f ? display_width - 32.0f : 720.0f;
+  layout.height = display_height < 560.0f ? display_height - 32.0f : 520.0f;
+  if (layout.width < 1.0f) layout.width = 1.0f;
+  if (layout.height < 1.0f) layout.height = 1.0f;
+  return layout;
+}
+
 bool Dkc2DesktopEscapeExitsFullscreen(bool fullscreen, bool overlay_open) {
   return fullscreen && !overlay_open;
 }

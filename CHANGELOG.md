@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Fixed the in-game ImGui pause window being offset on Retina/high-DPI
+  displays by sizing and centering it from ImGui's logical display dimensions.
+  It is centered only on first appearance and can now be moved by dragging its
+  title bar without snapping back each frame.
 - The Mac app has an optional CRT television display (pause menu >
   Settings > Display). Each source line is drawn as an electron-beam
   profile whose width follows its brightness, normalised so the picture

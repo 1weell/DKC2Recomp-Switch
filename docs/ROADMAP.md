@@ -100,6 +100,8 @@
 - [x] Add a Dear ImGui in-game pause overlay to the OpenGL gameplay hosts,
       including all DKC2 launcher settings, two-player controller setup, an
       explicit Assist Tools/Cheats gate, and five save/load slots.
+- [x] Center the pause overlay from ImGui's logical display size on high-DPI
+      hosts and allow title-bar repositioning after its first placement.
 - [x] Add optional Assist Tools and Credits pages to the shared pre-boot
       recomp-ui launcher through additive, host-supplied capability fields.
 - [x] Add persistent, runtime-consumed keyboard and standard-controller

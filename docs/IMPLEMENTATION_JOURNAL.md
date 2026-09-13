@@ -5427,3 +5427,23 @@ fullscreen 16:9 with the tube on (`DKC2_PACING_LOG`, 1260 display-locked
 frames from the bramble state) showed every frame for exactly one refresh;
 the present call's mean rose from 1.5 ms to 2.8 ms, the five passes over a
 3456x1940 viewport, well inside the 16.7 ms frame.
+
+## 2026-09-04 - Logical pause-menu placement and dragging
+
+The SDL renderer passed the OpenGL drawable size to the pause overlay. On a
+Retina Mac that size is in physical pixels, while ImGui's SDL backend reports
+mouse positions and `DisplaySize` in logical window points. The pause window
+was therefore centered outside the visible logical area and was clipped at
+the screen edge. `Dkc2DesktopOverlayRenderOpenGl` now uses
+`ImGuiIO::DisplaySize` for the dimming rectangle and the host-neutral window
+layout calculation. The layout retains the existing 720 by 520 maximum and
+16-point compact-window inset, with a one-pixel minimum covered by synthetic
+tests.
+
+The initial center uses `ImGuiCond_Once` instead of being forced every frame,
+and the window no longer carries `ImGuiWindowFlags_NoMove`. This matches the
+DKC3 behavior: the menu starts centered in logical coordinates and can then be
+repositioned by its title bar without snapping back. The complete macOS suite
+passed all 55 tests both before and after the change, the native app was rebuilt
+and ad-hoc signed, and the owner confirmed the live menu behavior on the Retina
+window.

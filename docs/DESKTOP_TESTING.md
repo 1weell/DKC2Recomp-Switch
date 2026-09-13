@@ -152,6 +152,13 @@ controller input is suppressed, and queued audio is cleared/paused until
 Resume or Escape closes the menu. The pages are Main, Settings, Assist Tools /
 Cheats, Controls, and Credits.
 
+On first open, confirm the pause window is centered in the logical game window,
+especially on a Retina/high-DPI Mac where the OpenGL drawable is larger than
+the window in points. Drag the title bar and confirm the menu follows the
+pointer without snapping back to center. Close and reopen it in the same run to
+confirm the moved position is retained; a fresh app launch should center it
+again.
+
 Assist Tools default off. Enabling them permits the existing 3x rewind,
 3x fast-forward, five-slot overlay controls, and configurable state shortcuts;
 disabling the gate makes those bindings inert. The native Mac Game menu's

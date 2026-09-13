@@ -193,7 +193,9 @@ Escape returns to windowed mode without also opening the overlay; Escape then
 retains its normal overlay behavior. The SDL host also accepts the controller
 Guide button; Start+Back is the portable fallback. The overlay provides Resume,
 Settings, Controls, Assist Tools / Cheats, Credits, and Quit.
-Gameplay input and audio are paused while it is open.
+Gameplay input and audio are paused while it is open. Its first placement is
+centered from ImGui's logical display size, including on Retina/high-DPI
+windows, and the title bar can then be dragged to reposition it.
 
 The Settings page exposes the launcher's display, audio, filtering, screen
 model, widescreen, skip-launcher, and Restore Defaults choices. Volume,

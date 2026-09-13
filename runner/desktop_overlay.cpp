@@ -1078,20 +1078,19 @@ extern "C" void Dkc2DesktopOverlayRenderOpenGl(
     ImGui::NewFrame();
   }
 
+  const ImVec2 display_size = ImGui::GetIO().DisplaySize;
+  const Dkc2DesktopOverlayWindowLayout layout =
+      Dkc2DesktopOverlayWindowLayoutForDisplay(display_size.x,
+                                                display_size.y);
   ImGui::GetBackgroundDrawList()->AddRectFilled(
-      ImVec2(0.0f, 0.0f), ImVec2(static_cast<float>(width),
-                                  static_cast<float>(height)),
-      IM_COL32(0, 0, 0, 150));
-  float menu_width = width < 760 ? static_cast<float>(width) - 32.0f : 720.0f;
-  float menu_height =
-      height < 560 ? static_cast<float>(height) - 32.0f : 520.0f;
+      ImVec2(0.0f, 0.0f), display_size, IM_COL32(0, 0, 0, 150));
   ImGui::SetNextWindowPos(
-      ImVec2(width * 0.5f, height * 0.5f), ImGuiCond_Always,
+      ImVec2(layout.center_x, layout.center_y), ImGuiCond_Once,
       ImVec2(0.5f, 0.5f));
-  ImGui::SetNextWindowSize(ImVec2(menu_width, menu_height), ImGuiCond_Always);
+  ImGui::SetNextWindowSize(ImVec2(layout.width, layout.height),
+                           ImGuiCond_Always);
   ImGui::Begin("DKC2 Pause Menu", nullptr,
-               ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
-                   ImGuiWindowFlags_NoCollapse |
+               ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse |
                    ImGuiWindowFlags_NoSavedSettings);
   ImGui::TextColored(ImVec4(0.70f, 0.38f, 1.0f, 1.0f),
                      "DONKEY KONG COUNTRY 2");

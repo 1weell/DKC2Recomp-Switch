@@ -35,6 +35,13 @@ typedef struct Dkc2DesktopOverlayModel {
   bool pad_capture_armed;
 } Dkc2DesktopOverlayModel;
 
+typedef struct Dkc2DesktopOverlayWindowLayout {
+  float center_x;
+  float center_y;
+  float width;
+  float height;
+} Dkc2DesktopOverlayWindowLayout;
+
 void Dkc2DesktopOverlayModelInit(Dkc2DesktopOverlayModel *model,
                                  bool assist_tools);
 void Dkc2DesktopOverlayModelSetOpen(Dkc2DesktopOverlayModel *model,
@@ -57,6 +64,8 @@ bool Dkc2DesktopOverlayModelBindingCaptureIsPad(
     const Dkc2DesktopOverlayModel *model);
 bool Dkc2DesktopOverlayModelArmPadCapture(
     Dkc2DesktopOverlayModel *model, bool gamepad_neutral);
+Dkc2DesktopOverlayWindowLayout Dkc2DesktopOverlayWindowLayoutForDisplay(
+    float display_width, float display_height);
 
 /* Escape leaves fullscreen before it is offered to the closed pause menu.
  * Once windowed, or while the menu is already open, Escape retains its

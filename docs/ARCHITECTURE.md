@@ -416,7 +416,11 @@ wrapped 0–4 slot selector, one-shot Resume/Quit/Save/Load actions, and the
 validated lifecycle of one active keyboard/controller binding capture.
 Platform glue supplies SDL events or a small Win32 input translation, and the
 presenter submits ImGui draw data after the game quad but before the same
-buffer swap. While open, the hosts schedule no SNES frame, zero game input,
+buffer swap. Overlay geometry comes from `ImGuiIO::DisplaySize`, not the
+presenter's physical drawable dimensions, so a Retina/high-DPI window centers
+the menu in logical coordinates. The initial placement is centered once and
+the title bar remains movable for the rest of the gameplay context. While
+open, the hosts schedule no SNES frame, zero game input,
 clear/pause queued audio, and continue presenting at the host rate. File-state
 actions reuse SNESrecomp's `RtlSaveSlotPath`,
 `RtlSaveSnapshot`/`RtlLoadSnapshot`, and `save_name_prefix`; the bounded

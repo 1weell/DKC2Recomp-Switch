@@ -186,7 +186,10 @@ and do not require Assist Tools. The overlay's five-slot selector and snapshot
 files are host state and never appear on the SNES bus. Opening the overlay also replaces
 the packed controller word with
 zero, pauses host audio, and stops scheduling console frames; none of those
-menu inputs enter an SNES controller register. Rumble, DirectInput, and native PlayStation
+menu inputs enter an SNES controller register. The SDL/OpenGL overlay uses
+ImGui's logical display size rather than the backing drawable pixel size, so
+Retina scaling affects neither its center nor its drag coordinates. Rumble,
+DirectInput, and native PlayStation
 APIs are not exposed by the desktop host yet.
 
 The accepted desktop executable is a Windows GUI host. A no-argument launch selects an

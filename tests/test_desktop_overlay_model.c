@@ -8,6 +8,22 @@ static int Expect(bool condition, const char *message) {
 }
 
 int main(void) {
+  Dkc2DesktopOverlayWindowLayout layout =
+      Dkc2DesktopOverlayWindowLayoutForDisplay(1728.0f, 1117.0f);
+  if (Expect(layout.center_x == 864.0f && layout.center_y == 558.5f &&
+                 layout.width == 720.0f && layout.height == 520.0f,
+             "overlay layout did not use the logical display dimensions"))
+    return 1;
+  layout = Dkc2DesktopOverlayWindowLayoutForDisplay(640.0f, 480.0f);
+  if (Expect(layout.center_x == 320.0f && layout.center_y == 240.0f &&
+                 layout.width == 608.0f && layout.height == 448.0f,
+             "overlay layout did not preserve compact-window margins"))
+    return 1;
+  layout = Dkc2DesktopOverlayWindowLayoutForDisplay(24.0f, 20.0f);
+  if (Expect(layout.width == 1.0f && layout.height == 1.0f,
+             "overlay layout did not clamp tiny-window dimensions"))
+    return 1;
+
   Dkc2DesktopOverlayModel model;
   Dkc2DesktopOverlayModelInit(&model, false);
   if (Expect(Dkc2DesktopEscapeExitsFullscreen(true, false) &&
