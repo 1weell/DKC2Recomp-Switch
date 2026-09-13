@@ -132,6 +132,10 @@ for name, pattern, count, helper in MODULE.POLICY_READS:
     read = ("cpu_read16(cpu, 0x00, (uint16)(cpu->D + 0x006e))" if helper == "Dkc2CoopAnimalTypeValue"
             else f"cpu_read16(cpu, cpu->DB, (uint16)(0x{address}))")
     read = {"Dkc2CoopScreenLeftValue": "0x10", "Dkc2CoopScreenSpanValue": "0xe0"}.get(helper, read)
+    if helper in ("Dkc2CoopTeamPartnerValue", "Dkc2CoopRopeAnimationFollowerValue"):
+        read = "cpu_read16(cpu, cpu->DB, (uint16)(0x0597))"
+    if helper == "Dkc2CoopTeamStateValue":
+        read = "cpu_read16(cpu, (uint8)(((((uint32)cpu->DB << 16) + (uint32)0x002e + (uint32)cpu->Y)) >> 16), (uint16)((((uint32)cpu->DB << 16) + (uint32)0x002e + (uint32)cpu->Y)))"
     entry = f"RecompReturn {name}_M0X0(CpuState *cpu) {{"
     reads = "".join(f"  uint16 a{i} = {read};\n" for i in range(count))
     if entry in COMBAT_FIXTURE:
@@ -147,11 +151,27 @@ ANIMAL_FIXTURE = ANIMAL_FIXTURE.replace("RecompReturn kong_state_27_M0X0(CpuStat
 COMBAT_FIXTURE += ANIMAL_FIXTURE
 COMBAT_FIXTURE = COMBAT_FIXTURE.replace("RecompReturn bank_B5_F776_M0X0(CpuState *cpu) {",
     "RecompReturn bank_B5_F776_M0X0(CpuState *cpu) {\nL_F789_M0X0:\n  cpu_trace_block(cpu, 0xB5F794);")
+COMBAT_FIXTURE += ''.join(f"""
+RecompReturn {name}_M0X0(CpuState *cpu) {{
+  work_on_active_kong_M0X0(cpu);
+  return NORMAL;
+}}
+""" for name in MODULE.ROPE_FUNCTIONS)
 GATE_FIXTURE += STATE_FIXTURE + CLIPPING_FIXTURE + COMBAT_FIXTURE
 GATE_FIXTURE_PRELOADED_X += STATE_FIXTURE + CLIPPING_FIXTURE + COMBAT_FIXTURE
 
 
 class ApplyCoopOverridesTests(unittest.TestCase):
+    def test_rope_calls_fail_closed(self):
+        for name in MODULE.ROPE_FUNCTIONS:
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as tmp:
+                directory = Path(tmp)
+                broken = GATE_FIXTURE.replace(name + '_M0X0', 'unrelated_M0X0')
+                path = self.write_generated(directory, 'bank_b8.c', broken)
+                with self.assertRaisesRegex(ValueError, 'rope reaction'):
+                    MODULE.apply_overrides(directory)
+                self.assertEqual(path.read_text(encoding='utf-8'), broken)
+
     def write_generated(self, directory, name, text):
         path = directory / name
         path.write_text(text, encoding="utf-8")
@@ -171,11 +191,14 @@ class ApplyCoopOverridesTests(unittest.TestCase):
             self.assertIn(MODULE.BANANA_TRACE + MODULE.BANANA_REPEAT, adapted)
             self.assertEqual(adapted.count("Dkc2CoopRecordInteractionSource(cpu, "), 1)
             self.assertEqual(adapted.count("Dkc2CoopBounceUsesFollower(cpu)"), 1)
+            self.assertEqual(adapted.count("Dkc2CoopRopeUsesFollower(cpu)"), 2)
             self.assertEqual(adapted.count("Dkc2CoopFollowerPaletteOffset(cpu, 0x1e)"), 1)
             self.assertEqual(adapted.count("Dkc2CoopRecoveryFollowerValue(cpu, "), 1)
             self.assertEqual(adapted.count("Dkc2CoopRecordPickupValue(cpu, "), 1)
             self.assertEqual(adapted.count("Dkc2CoopHeldObjectValue(cpu, "), 1)
             self.assertEqual(adapted.count("Dkc2CoopHeldOwnerValue(cpu, "), 10)
+            self.assertEqual(adapted.count("Dkc2CoopTeamPartnerValue(cpu, "), 2)
+            self.assertEqual(adapted.count("Dkc2CoopTeamStateValue(cpu, "), 1)
             self.assertEqual(
                 adapted.count(
                     "Dkc2CoopGateActiveValue(cpu, cpu_read16(cpu, cpu->DB, "
@@ -255,7 +278,8 @@ class ApplyCoopOverridesTests(unittest.TestCase):
 
     def test_requires_action_anchors_without_writing(self):
         for missing in ("handle_animal_mounting", "player_interaction_17", "kong_state_27",
-                        "start_player_jumping", "prevent_sprite_from_leaving_level_x", "bank_B5_F776"):
+                        "start_player_jumping", "prevent_sprite_from_leaving_level_x", "bank_B5_F776",
+                        "team_up_action"):
             with self.subTest(missing=missing), tempfile.TemporaryDirectory() as tmp:
                 directory = Path(tmp)
                 broken = GATE_FIXTURE.replace(missing + "_M0X0", "unrelated_M0X0")

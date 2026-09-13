@@ -1286,3 +1286,50 @@ DKC2-specific verified addresses. Old shared echo is cleared on a mute change.
 CRT is a host GL simulation after color conversion. GDI retains saved CRT
 preferences but disables unavailable shader controls. Tube mode performs its
 own scaling; Flat panel retains Nearest/Bilinear/Reconstruct.
+
+## TEAM rope contact (2026-09-13)
+
+US v1.0 terrain routine `CODE_B8B714` is at `$B8:B627`. It queues rope
+reactions through `set_player_interaction_global`, whose accepted reaction
+stores current sprite `$64` in `$0A84`. Reaction `$12` at `$B8:865F` enters
+single vertical rope state `$35`; `$11` at `$B8:86B4` handles the other rope
+contact branch. Both normally call `work_on_active_kong`; simultaneous TEAM
+selects the contact source's work pair. The reported Topsail Trouble scene
+uses normal gameplay submode `$08`, and its actual pause bit is `$0040` in
+`$08C2`. The private replay resumes with Start instead of modifying WRAM.
+The rope callbacks at `$B9:DAB9`, `$B9:DAE2`, `$B9:DB1B` and `$B9:DB47`
+contain follower early-outs. The single-rope semantic animations are `$2F`
+hang, `$30` Up and `$31` Down; the Dixie slot adds `$A3`. The sprite's `$36`
+word selects the animation, while `$18` is the displayed graphic. The replay
+checks changing graphic IDs, so coordinate movement alone cannot pass.
+
+State `$36` at `$B8:A664` runs animation without an action gate, waiting for
+the single/double-rope transition to finish. Its speed callback `$B9:DD63`
+and completion callbacks `$B9:DD7E` (enter `$37`, double rope) and `$B9:DD90`
+(return to `$35`, single rope) also skip the follower. Double-rope idle uses
+`$B9:DD9E`; climbing direction/idle completion uses `$B9:DE19`. Semantic
+animations `$34/$35` are the transitions, `$36` hangs, `$37` climbs Up and
+`$38` climbs Down. These are animation IDs, distinct from actor state IDs.
+The second reported save had Dixie in state `$36`, animation `$D7`, timer
+zero, callback `$DD63` and script cursor `$4504` pointing at `$83/$D12B`.
+The preceding `$81/$DD7E` had been skipped. Replaying this validated completion
+recovers to double-rope state `$37` at the same `(947,2480)` coordinates.
+Single-rope turn animation `$32` (Dixie `$D5`) calls `$B9:E015` to toggle
+facing bit `$4000` in sprite `$12`. Skipping that callback makes a controlled
+follower turn repeatedly without passing the next lateral action gate.
+The host enables this shared callback only in rope states. Horizontal-rope
+state `$38` uses semantic animations `$39/$3A` and callbacks `$B9:DDB9`,
+`$B9:DDCB` and `$B9:DDEA` for moving, idle and animation speed.
+
+## TEAM carrying (2026-09-13)
+
+The US v1.0 team-up action at $B8:C750 checks SNES A ($0080 in $0983)
+and normally accepts only follower states $22/$2A. Independent state $00
+therefore fails the original gate. The host substitutes only this operand
+after checking separation <=24 X / <=16 Y pixels. $0593/$0595 and
+$0597/$0599 identify carrier/passenger actor and work pairs; controller ports
+remain fixed to $0DE2/$0E40. $0D7A records the carried actor. Reaction $04
+uses carrier state $13 during pickup, then $17/$18 while carrying. Drop uses
+reaction $06; a missed throw enters $1F flight then $21 waiting. Grounded
+$21 resumes independent control in simultaneous TEAM without changing the
+airborne trajectory or reintroducing the follower history teleport.

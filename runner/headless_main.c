@@ -782,8 +782,8 @@ int main(int argc, char **argv) {
                 (unsigned)ReadWram16(0x096D), (unsigned)Dkc2CoopTakeStompEvents());
         for (unsigned slot = 0; slot < 24; ++slot) {
           const unsigned base = 0x0DE2 + slot * 0x5E;
-          const unsigned offsets[] = {0, 2, 6, 10, 0x12, 0x1C, 0x2E, 0x30, 0x32};
-          const char *names[] = {"id", "order", "x", "y", "attr", "render", "state", "flags", "action"};
+          const unsigned offsets[] = {0, 2, 6, 10, 0x12, 0x1C, 0x2E, 0x30, 0x32, 0x18, 0x36};
+          const char *names[] = {"id", "order", "x", "y", "attr", "render", "state", "flags", "action", "graphic", "animation"};
           fprintf(coop_trace, "%s{\"slot\":%u", slot ? "," : "", slot);
           for (unsigned field = 0; field < sizeof offsets / sizeof offsets[0]; ++field) {
             unsigned address = base + offsets[field];

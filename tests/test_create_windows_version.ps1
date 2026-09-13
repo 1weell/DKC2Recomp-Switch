@@ -64,8 +64,10 @@ try {
         ($Manifest -match ('(?m)^ProjectVersion={0}\r?$' -f
             [Regex]::Escape($ExpectedVersion))) `
         "The manifest does not record the project version $ExpectedVersion."
-    Assert-True ($Manifest -match '(?m)^SourceWorkingTreeDirty=true\r?$') `
-        "The explicitly allowed dirty test snapshot was not marked dirty."
+    $SourceStatus = @(& git -C $Repository -c core.safecrlf=false status --porcelain=v1 --untracked-files=normal --ignore-submodules=none)
+    $ExpectedDirty = ($SourceStatus.Count -gt 0).ToString().ToLowerInvariant()
+    Assert-True ($Manifest -match ('(?m)^SourceWorkingTreeDirty={0}\r?$' -f $ExpectedDirty)) `
+        "The snapshot manifest does not reflect the actual source working tree."
 
     $OverwriteRejected = $false
     try {

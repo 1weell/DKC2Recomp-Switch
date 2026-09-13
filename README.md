@@ -47,7 +47,7 @@ pack...**. Game art is never included in this source tree or the app bundle.
 
 ### Windows release
 
-1. Download `DKC2Recomp-v0.0.7-Windows-x64.zip` from
+1. Download `DKC2Recomp-v0.0.8-Windows-x64.zip` from
    [Releases](../../releases) and extract the complete archive.
 2. Run `DKC2Recomp.exe`.
 3. In the Dear ImGui launcher, select your own legally obtained North American
@@ -135,7 +135,7 @@ disagree while its data is intact.
 
 The v0.0.6 Mac archive is an ad-hoc-signed Apple-silicon build and is not
 notarized. It adds the CRT television display, the Retina pause-menu fix, and
-the optional Donkey/Kiddy character slots. The v0.0.7 release carries this
+the optional Donkey/Kiddy character slots. The v0.0.8 release carries this
 Mac archive unchanged alongside the new Windows build; the Mac binary does
 not contain the new simultaneous co-op or MSU-1 support. If Gatekeeper quarantines the
 downloaded archive, open the app from Finder with **Control-click > Open** and
@@ -269,6 +269,23 @@ can attack enemies; Player 2's roll, stomp and bounce are covered by a private
 first-level replay, along with contact damage and a Player 1 attack regression.
 Roll/stomp recovery restores walking and jumping. Held barrels follow and
 launch from their owner, including throws across different platform heights.
+Either player can walk up to their partner and press **SNES A** (keyboard
+**X** by default) to carry them. Pickup requires both Kongs on foot and within
+24 game pixels horizontally and 16 vertically. Press A again to put them down,
+or Y to throw them. The carrier keeps their own controls; both players regain
+independent movement after release. Diddy/Dixie and Donkey/Kiddy checks cover
+near/far pickup, carrying, drop/throw and save/load.
+Each player can grab and climb ropes independently, with climbing animations
+in both directions. Single/double-rope junctions complete normally, including
+when loading a save already stuck at the end of a transition. The Topsail Trouble
+regression covers Player 2 attaching, both players climbing in opposite
+directions, save/load and jumping to the neighboring rope. To repeat it with
+the private reported snapshot, configure `DKC2_COOP_ROPE_STATE` with its
+external path and run the `supplied_rom_coop_ropes` CTest check. Adding
+`DKC2_COOP_ROPE_JUNCTION_STATE` enables the second reported checkpoint's
+double-rope animations, side exits and transition save/load checks.
+It also checks crossing the entire net and reversing direction to reach both
+outer ropes without repeating the turning animation in place.
 A hurt Kong completes its departure and waits for a DK barrel; pressing its
 controls or loading a save cannot revive it. The survivor continues without
 the original TEAM turn-taking prompt. A DK barrel restores independent control.

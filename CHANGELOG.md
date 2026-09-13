@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.0.8 (alpha) - 2026-09-13
+
+- Fixed Player 2 grabbing ropes in simultaneous TEAM mode. Rope reactions now
+  attach the Kong that touched the rope. The reported Topsail Trouble save
+  passes climbing, opposing controls, save/load and jumping to the next rope.
+- Restored Player 2's climbing animation selection and frame advancement in
+  both directions, instead of moving with the follower's hanging pose.
+- Fixed Player 2 freezing at single/double-rope junctions, including saves
+  already stuck in a transition. Double-rope climbing animates in both
+  directions and returns control after either side exit.
+- Fixed Player 2 repeatedly turning in place when moving across rope nets,
+  and enabled the horizontal-rope animation callbacks for independent play.
+- Restored nearby partner pickup for either player in simultaneous TEAM mode.
+  Carrying preserves the carrier's controls through pickup, drop and throw;
+  a thrown partner regains independent movement after landing. Includes
+  input-driven Diddy/Dixie and Donkey/Kiddy acceptance with save/load.
+- Fixed the Windows snapshot test's dirty-tree expectation on clean checkouts.
+
 ## 0.0.7 (alpha) - 2026-09-13
 
 - Added CRT television on Windows OpenGL and SDL with three presets plus

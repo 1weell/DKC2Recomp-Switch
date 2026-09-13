@@ -472,3 +472,24 @@ Exit criterion: reach and render the title screen with correct audio and input.
 - [ ] Full-game replacement-character and audio-transition coverage.
 - [ ] Exact PCM positions across save/rewind and seamless soundtrack switching.
 - [ ] macOS/Linux builds of the combined milestone and physical audio/rumble acceptance.
+
+## Independent TEAM ropes
+
+- [x] Route rope contact to the grabbing Kong without changing camera leader.
+- [x] Synthetic mode/ownership/save-reset checks and real-emitter contracts.
+- [x] Player 2 Up/Down animation selection and changing displayed frames.
+- [x] Reported Topsail Trouble replay: P2 climb, opposing inputs, save/load,
+  jump to neighboring rope and unchanged P1 position during P2-only inputs.
+- [x] Reported junction: recover an already-stuck save, animate double-rope
+  Up/Down, descend to single rope, exit either side and reload mid-transition.
+- [x] Hold Right to the outer net rope, reverse and reach the left outer rope
+  without looping the turn animation or moving Player 1.
+- [ ] Full-game horizontal-rope, animal and other rope-transition coverage.
+
+## Nearby TEAM partner carrying
+
+- [x] Either player can pick up a nearby on-foot partner with SNES A.
+- [x] Preserve pickup/carry ownership and controls through save/load.
+- [x] Verify drop/throw and both players walking/jumping afterward.
+- [x] Verify Diddy/Dixie and imported Donkey/Kiddy with real input replays.
+- [ ] Full-game team-throw terrain/enemy and unusual animal-transition coverage.

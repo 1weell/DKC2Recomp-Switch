@@ -90,11 +90,16 @@ uint16_t Dkc2CoopRecoveryFollowerValue(CpuState *cpu, uint16_t original);
 uint16_t Dkc2CoopRecordPickupValue(CpuState *cpu, uint16_t object);
 uint16_t Dkc2CoopHeldOwnerValue(CpuState *cpu, uint16_t original);
 uint16_t Dkc2CoopHeldObjectValue(CpuState *cpu, uint16_t original);
+uint16_t Dkc2CoopTeamPartnerValue(CpuState *cpu, uint16_t original);
+uint16_t Dkc2CoopTeamStateValue(CpuState *cpu, uint16_t original);
 uint16_t Dkc2CoopFollowerPaletteOffset(CpuState *cpu, uint16_t original);
 uint16_t Dkc2CoopRecordInteractionSource(CpuState *cpu, uint16_t source);
 /* Consume host-only stomp notifications: bit 0=P1, bit 1=P2. */
 uint8_t Dkc2CoopTakeStompEvents(void);
 bool Dkc2CoopBounceUsesFollower(CpuState *cpu);
+/* Rope reactions retain the grabbing Kong in the guest interaction source. */
+bool Dkc2CoopRopeUsesFollower(CpuState *cpu);
+uint16_t Dkc2CoopRopeAnimationFollowerValue(CpuState *cpu, uint16_t original);
 bool Dkc2CoopUseBothMountColliders(CpuState *cpu);
 uint16_t Dkc2CoopBananaSecondWidth(CpuState *cpu, uint16_t original);
 bool Dkc2CoopBananaNextPass(CpuState *cpu);

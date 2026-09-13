@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.20)
 
 project(dkc2_port
-    VERSION 0.0.7
+    VERSION 0.0.8
     DESCRIPTION "Native PC recompilation of Donkey Kong Country 2"
     LANGUAGES C)
 
@@ -12,6 +12,8 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS OFF)
 
 set(DKC2_ROM "" CACHE FILEPATH "Private path to a headerless DKC2 USA v1.0 ROM")
+set(DKC2_COOP_ROPE_STATE "" CACHE FILEPATH "External Topsail Trouble rope regression snapshot")
+set(DKC2_COOP_ROPE_JUNCTION_STATE "" CACHE FILEPATH "External stuck double-rope transition regression snapshot")
 set(DKC2_COOP_ANIMAL_STATE "" CACHE FILEPATH
     "Private Pirate Panic animal ledges snapshot for simultaneous co-op acceptance")
 set(DKC2_COOP_BANANA_STATE "" CACHE FILEPATH
@@ -745,6 +747,13 @@ if(BUILD_TESTING)
                     --rom "${DKC2_ROM}")
             set_tests_properties(supplied_rom_coop_barrels PROPERTIES
                 LABELS "private;integration;coop;combat" TIMEOUT 300)
+            add_test(NAME supplied_rom_coop_carry
+                COMMAND ${Python3_EXECUTABLE}
+                    ${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_coop_carry.py
+                    --runner "$<TARGET_FILE:dkc2_snesrecomp_headless>"
+                    --rom "${DKC2_ROM}")
+            set_tests_properties(supplied_rom_coop_carry PROPERTIES
+                LABELS "private;integration;coop;input;savestate" TIMEOUT 180)
             add_test(NAME supplied_rom_coop_lifecycle
                 COMMAND ${Python3_EXECUTABLE}
                     ${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_coop_lifecycle.py
@@ -759,6 +768,20 @@ if(BUILD_TESTING)
                     --rom "${DKC2_ROM}")
             set_tests_properties(supplied_rom_coop_handoff PROPERTIES
                 LABELS "private;integration;coop;savestate" TIMEOUT 180)
+            if(DKC2_COOP_ROPE_STATE)
+                set(rope_junction_args)
+                if(DKC2_COOP_ROPE_JUNCTION_STATE)
+                    list(APPEND rope_junction_args --junction-state "${DKC2_COOP_ROPE_JUNCTION_STATE}")
+                endif()
+                add_test(NAME supplied_rom_coop_ropes
+                    COMMAND ${Python3_EXECUTABLE}
+                        ${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_coop_ropes.py
+                        --runner $<TARGET_FILE:dkc2_snesrecomp_headless>
+                        --rom "${DKC2_ROM}" --state "${DKC2_COOP_ROPE_STATE}"
+                        ${rope_junction_args})
+                set_tests_properties(supplied_rom_coop_ropes PROPERTIES
+                    LABELS "private;integration;coop;input;savestate" TIMEOUT 180)
+            endif()
             if(DKC2_COOP_BANANA_STATE)
                 add_test(NAME supplied_rom_coop_bananas
                     COMMAND ${Python3_EXECUTABLE}

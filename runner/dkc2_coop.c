@@ -151,12 +151,70 @@ static uint16_t CoopReadAbs(CpuState *cpu, uint16_t offset) {
   return cpu_read16(cpu, cpu->DB, (uint16)(offset));
 }
 
+static bool CoopEnabled(CpuState *cpu) {
+  return cpu && Dkc2CoopSimultaneousActive(cpu_read16(cpu, 0, kDkc2CoopModeFlag),
+                                          s_coop_mode == kDkc2CoopSimultaneous);
+}
+
+static void CoopMakeLeader(CpuState *cpu, uint16_t kong) {
+  if (kong != cpu_read16(cpu, 0, 0x0597)) return;
+  uint16_t active = cpu_read16(cpu, 0, 0x0593);
+  uint16_t active_work = cpu_read16(cpu, 0, 0x0595);
+  cpu_write16(cpu, 0, 0x0593, kong);
+  cpu_write16(cpu, 0, 0x0595, cpu_read16(cpu, 0, 0x0599));
+  cpu_write16(cpu, 0, 0x0597, active);
+  cpu_write16(cpu, 0, 0x0599, active_work);
+  cpu_write16(cpu, 0, 0x08A4, kong == kDkc2CoopSlotB ? 1 : 0);
+  cpu_write16(cpu, 0, 0x08A2, kong == kDkc2CoopSlotB ? 2 : 1);
+}
+
+uint16_t Dkc2CoopTeamPartnerValue(CpuState *cpu, uint16_t original) {
+  if (!CoopEnabled(cpu)) return original;
+  uint16_t kong = CoopReadDp(cpu, kDkc2CoopCurrentSprite);
+  if (kong == kDkc2CoopSlotA) return kDkc2CoopSlotB;
+  if (kong == kDkc2CoopSlotB) return kDkc2CoopSlotA;
+  return original;
+}
+
+uint16_t Dkc2CoopTeamStateValue(CpuState *cpu, uint16_t original) {
+  if (!CoopEnabled(cpu)) return original;
+  uint16_t kong = CoopReadDp(cpu, kDkc2CoopCurrentSprite);
+  uint16_t partner = Dkc2CoopTeamPartnerValue(cpu, 0);
+  if (!partner) return original;
+  /* The original action summons an AI follower, regardless of distance.
+   * Independent players must be alive, on foot and within arm's reach.
+   * Only substitute the eligibility operand; the native reaction still
+   * performs the pickup, animation, carrying physics and release. */
+  if (cpu->Y != partner || s_lost_mask || cpu_read16(cpu, 0, 0x0D7A) ||
+      cpu_read16(cpu, 0, 0x006E) ||
+      !(cpu_read16(cpu, 0, 0x08C2) & 0x4000) ||
+      cpu_read16(cpu, 0, (uint16_t)(kong + 0x2E)) != 0 ||
+      (original != 0 && original != 0x13 && original != 0x22))
+    return 0xFFFF;
+  int dx = (int)cpu_read16(cpu, 0, (uint16_t)(kong + 6)) -
+           (int)cpu_read16(cpu, 0, (uint16_t)(partner + 6));
+  int dy = (int)cpu_read16(cpu, 0, (uint16_t)(kong + 10)) -
+           (int)cpu_read16(cpu, 0, (uint16_t)(partner + 10));
+  if (dx < -24 || dx > 24 || dy < -16 || dy > 16) return 0xFFFF;
+  /* Team reactions use the active/inactive work pair. Promote the carrier
+   * without moving either actor or changing their fixed controller ports.
+   * Guest selectors preserve this ownership across saves and rewind. */
+  CoopMakeLeader(cpu, kong);
+  return 0x22;
+}
+
 static uint16_t CoopHeldOwner(CpuState *cpu) {
   if (!cpu || !Dkc2CoopSimultaneousActive(
                   cpu_read16(cpu, 0, kDkc2CoopModeFlag),
                   s_coop_mode == kDkc2CoopSimultaneous))
     return 0;
   uint16_t object = cpu_read16(cpu, 0, 0x0D7A);
+  if (object == kDkc2CoopSlotA || object == kDkc2CoopSlotB) {
+    uint16_t owner = cpu_read16(cpu, 0, 0x0593);
+    return object == cpu_read16(cpu, 0, 0x0597) &&
+           owner == (object == kDkc2CoopSlotA ? kDkc2CoopSlotB : kDkc2CoopSlotA)
+               ? owner : 0;
+  }
   if (object < 0x0E9E || object >= 0x16B2 ||
       (object - 0x0DE2) % 0x5E != 0 || !cpu_read16(cpu, 0, object))
     return 0;
@@ -227,6 +285,28 @@ uint16_t Dkc2CoopGateActiveValue(CpuState *cpu, uint16_t active_slot) {
   return result;
 }
 
+static void CoopResumeRopeTransition(CpuState *cpu, uint16_t sprite) {
+  /* Older simultaneous snapshots can have already skipped the completion
+   * callback and parked at the script's terminal $83/$D12B wait. Replay just
+   * that native callback, preserving the finished pose and rope coordinates.
+   * Validate its instructions instead of assuming a character-specific cursor. */
+  uint16_t animation = cpu_read16(cpu, 0, (uint16_t)(sprite + 0x36));
+  if (animation >= 0xA3) animation = (uint16_t)(animation - 0xA3);
+  if ((animation != 0x34 && animation != 0x35) ||
+      cpu_read16(cpu, 0, (uint16_t)(sprite + 0x38)) != 0 ||
+      cpu_read16(cpu, 0, (uint16_t)(sprite + 0x3E)) != 0xDD63)
+    return;
+  uint16_t cursor = cpu_read16(cpu, 0, (uint16_t)(sprite + 0x3C));
+  uint16_t completion = animation == 0x34 ? 0xDD7E : 0xDD90;
+  if (cursor < 3 ||
+      (cpu_read16(cpu, 0xF9, (uint16_t)(cursor - 3)) & 0xFF) != 0x81 ||
+      cpu_read16(cpu, 0xF9, (uint16_t)(cursor - 2)) != completion ||
+      (cpu_read16(cpu, 0xF9, cursor) & 0xFF) != 0x83 ||
+      cpu_read16(cpu, 0xF9, (uint16_t)(cursor + 1)) != 0xD12B)
+    return;
+  cpu_write16(cpu, 0, (uint16_t)(sprite + 0x3C), (uint16_t)(cursor - 3));
+}
+
 uint16_t Dkc2CoopSelectStateWord(CpuState *cpu, uint16_t original) {
   if (!cpu || !Dkc2CoopSimultaneousActive(
                   cpu_read16(cpu, 0x00, kDkc2CoopModeFlag),
@@ -237,6 +317,8 @@ uint16_t Dkc2CoopSelectStateWord(CpuState *cpu, uint16_t original) {
   uint16_t sprite = cpu->X;
   if (sprite != kDkc2CoopSlotA && sprite != kDkc2CoopSlotB)
     return original;
+  if (original == 0x36)
+    CoopResumeRopeTransition(cpu, sprite);
   uint16_t held = cpu_read16(cpu, 0x00, sprite == kDkc2CoopSlotA
                                           ? kDkc2CoopP1Held : kDkc2CoopP2Held);
   uint8_t lost_bit = sprite == kDkc2CoopSlotA ? 1 : 2;
@@ -246,7 +328,24 @@ uint16_t Dkc2CoopSelectStateWord(CpuState *cpu, uint16_t original) {
     s_lost_mask &= (uint8_t)~lost_bit;
   if (original == 0x13 && (s_lost_mask & lost_bit))
     return original;
+  /* The carrier waits in $13 while the passenger jumps into its hands.
+   * Independent movement input must not cancel that native animation. */
+  uint16_t object = cpu_read16(cpu, 0, 0x0D7A);
+  if (original == 0x13 &&
+      (object == kDkc2CoopSlotA || object == kDkc2CoopSlotB) &&
+      CoopHeldOwner(cpu) == sprite)
+    return original;
   uint16_t state = Dkc2CoopFollowerNeedsControl(original, held) ? 0 : original;
+  if (original == 0x21 && !object && !(s_lost_mask & lost_bit) &&
+      (cpu_read16(cpu, 0, (uint16_t)(sprite + 0x1E)) & 0x0101) &&
+      !(cpu_read16(cpu, 0, (uint16_t)(sprite + 0x24)) & 0x8000)) {
+    /* A thrown partner normally sits waiting for the leader to touch it.
+     * Once grounded, give the independent player its normal interaction
+     * mask and action gate. Preserve the native flight and enemy hit path. */
+    state = 0;
+    uint16_t flags = cpu_read16(cpu, 0, (uint16_t)(sprite + 0x30));
+    cpu_write16(cpu, 0, (uint16_t)(sprite + 0x30), (uint16_t)(flags | 0x18));
+  }
   if (original == 0x6F) {
     /* TEAM's turn-handoff prompt waits for the newly active controller.
      * Both controllers are already participating: resume its existing
@@ -341,11 +440,6 @@ uint16_t Dkc2CoopRecordInteractionSource(CpuState *cpu, uint16_t source) {
     }
   }
   return source;
-}
-
-static bool CoopEnabled(CpuState *cpu) {
-  return cpu && Dkc2CoopSimultaneousActive(cpu_read16(cpu, 0, kDkc2CoopModeFlag),
-                                          s_coop_mode == kDkc2CoopSimultaneous);
 }
 
 bool Dkc2CoopUseBothMountColliders(CpuState *cpu) {
@@ -489,14 +583,7 @@ void Dkc2CoopPrepareAnimalMount(CpuState *cpu) {
    * preserving both players' positions, action states and collision masks.
    * Controller routing remains bound to the two fixed Kong slots. These
    * guest selectors also make ownership survive saves and rewind. */
-  uint16_t active = cpu_read16(cpu, 0, 0x0593);
-  uint16_t active_work = cpu_read16(cpu, 0, 0x0595);
-  cpu_write16(cpu, 0, 0x0593, kong);
-  cpu_write16(cpu, 0, 0x0595, cpu_read16(cpu, 0, 0x0599));
-  cpu_write16(cpu, 0, 0x0597, active);
-  cpu_write16(cpu, 0, 0x0599, active_work);
-  cpu_write16(cpu, 0, 0x08A4, kong == kDkc2CoopSlotB ? 1 : 0);
-  cpu_write16(cpu, 0, 0x08A2, kong == kDkc2CoopSlotB ? 2 : 1);
+  CoopMakeLeader(cpu, kong);
 }
 
 uint16_t Dkc2CoopAnimalFollowerFlags(CpuState *cpu, uint16_t original) {
@@ -516,6 +603,26 @@ uint8_t Dkc2CoopTakeStompEvents(void) {
   uint8_t events = s_stomp_events;
   s_stomp_events = 0;
   return events;
+}
+
+bool Dkc2CoopRopeUsesFollower(CpuState *cpu) {
+  if (!CoopEnabled(cpu)) return false;
+  /* Terrain contact queues the actual Kong in $0A84. Unlike an enemy
+   * reaction, its source is the player itself. This guest-owned value
+   * survives a snapshot taken between contact and reaction dispatch. */
+  uint16_t source = cpu_read16(cpu, 0, 0x0A84);
+  return (source == kDkc2CoopSlotA || source == kDkc2CoopSlotB) &&
+         source == cpu_read16(cpu, 0, 0x0597);
+}
+
+uint16_t Dkc2CoopRopeAnimationFollowerValue(CpuState *cpu, uint16_t original) {
+  if (!CoopEnabled(cpu)) return original;
+  uint16_t kong = cpu->X;
+  uint16_t state = cpu_read16(cpu, 0, (uint16_t)(kong + 0x2E));
+  if ((kong == kDkc2CoopSlotA || kong == kDkc2CoopSlotB) &&
+      state >= 0x35 && state <= 0x38)
+    return 0xFFFF;
+  return original;
 }
 
 bool Dkc2CoopBounceUsesFollower(CpuState *cpu) {

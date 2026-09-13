@@ -6267,3 +6267,107 @@ the source GitHub asset digests; Info.plist remains 0.0.6 and the executable
 matches the original published hash. The Mac binary was not rebuilt or run
 on this Windows host and does not include the new co-op/MSU-1 integration.
 See RELEASE-NOTES-v0.0.7.md for public coverage and limits.
+
+
+## 2026-09-13 - Nearby partner carrying in simultaneous TEAM
+
+The original team-up gate accepted only AI follower states, rejecting an
+independently controlled partner. Adapted its partner selector and eligibility
+operand to admit the other fixed player slot only within 24 horizontal and
+16 vertical pixels, with both Kongs present, on foot and empty-handed.
+The carrier becomes the guest leader without teleporting either player;
+controller ownership remains fixed. Preserved native pickup/drop/throw flow,
+including the pickup animation's waiting state. Grounded thrown partners
+resume independent control instead of waiting for contact with the leader.
+
+Baseline ran all 84 checks; 83 passed. The pre-existing Windows snapshot test
+incorrectly required a dirty working tree even on a clean checkout. Corrected
+its assertion to match the actual source status. Added synthetic carry policy
+coverage and real-emitter fixtures, plus a blank-SRAM input replay registered
+as supplied_rom_coop_carry. Diddy/Dixie and the owner's imported Donkey/Kiddy
+pack both passed pickup by either player, carrying while moving, passenger
+inputs, saved carrying ownership, drop/throw, independent movement and jumping,
+distance/height rejection, walking up to retry and simultaneous A presses.
+
+Both Release Windows hosts rebuilt. Native Windows UI verification loaded an
+external nearby-player snapshot and confirmed keyboard X pickup, the completed
+Diddy/Dixie and Donkey/Kiddy carry poses, put-down and the Escape menu. Full-game team-throw
+terrain/enemy interactions, unusual animal transitions and physical controller
+acceptance for this change remain unverified. Private assets and replay
+snapshots stay outside Git; the owner's quick snapshot is unchanged.
+
+Final validation covers all 85 configured tests: the complete run passed 83;
+the emitter fixture needed the new team-up operands, and the snapshot test
+encountered a transient Windows staging-directory rename denial. After the
+fixture correction, targeted reruns passed both tests and the expanded carry
+replay (including jumping while carrying). Logs are
+`build/coop-carry-tests.log` and `build/coop-carry-final-checks.log`; the combined
+coverage has no outstanding test failures. Donkey/Kiddy also passed the
+expanded replay separately. No runtime source changed after the full build.
+
+## 2026-09-13 - Independent rope climbing, animation and junctions
+
+The reported Topsail Trouble snapshot exposed rope reactions selecting the
+camera leader's work pair even when Player 2 contacted the rope. The adapter
+now uses the guest-serialized interaction source to select the grabbing Kong,
+without changing camera ownership. The first complete baseline passed all 85
+checks in 203.24 seconds (`build/coop-rope-baseline.log`). Synthetic policy,
+fail-closed generator and real-emitter tests cover ownership and mode guards.
+
+The follow-up animation report exposed single-rope callbacks skipping the
+independent follower. Their existing Up/Down selection and frame-speed paths
+now run for either player. The owner confirmed climbing and its animation
+worked in the rebuilt native game with P1 keyboard and P2 gamepad. A later
+checkpoint was already parked at the terminal wait of the single/double-rope
+transition. Enabled its native completion and double-rope callbacks, with a
+validated one-time script rewind for older saves that missed completion.
+Unfinished transitions retain their native timing and no actor is teleported.
+
+The owner then confirmed the middle junction worked but reported restricted
+sideways movement. Input replay reproduced P2 reaching the middle column and
+looping its turn. The shared facing callback also skipped the follower; the
+rope-only policy now lets it turn and cross to both outer ropes. Horizontal
+rope animation callbacks use the same policy, scoped to states $35-$38.
+
+The private regression uses only controller input, with the supported ROM
+hash and external snapshot hashes:
+
+- Original rope: `725807dad843865b979cc6f8c14a98eccd0adfd3549c63897ca257c38c3497d2`.
+- Stuck junction: `d3fa341c257601fab83ef8ba1ec2adc53516b2766b83585f4a92bb0e9e65f245`.
+
+`DKC2_COOP_ROPE_STATE` registers `supplied_rom_coop_ropes`; optional
+`DKC2_COOP_ROPE_JUNCTION_STATE` extends it. Both Diddy/Dixie and the imported
+Donkey/Kiddy pack pass grab, animated Up/Down, opposing controls, save/load,
+jump/regrab, stuck-save recovery, double-rope Up/Down, transition save/load
+and full right-to-left net traversal. Rich headless traces now include native
+animation and displayed-graphic IDs so movement with frozen frames fails.
+
+Windows native, SDL and headless Release targets rebuilt. The rebuilt native
+executable was reopened with the external junction save and the owner's
+keyboard/gamepad assignments. Intermediate complete 86-test runs passed
+after the single-rope animation and junction fixes; final sideways validation
+is recorded below. True horizontal-rope gameplay, other stages, unusual animal
+transitions and Mac/Linux builds remain unverified. Private snapshots, ROM,
+graphics and imported characters remain outside Git.
+
+Final validation passed all 86 configured tests in 237.50 seconds
+(`build/coop-rope-sideways-tests.log`), plus the expanded Donkey/Kiddy rope
+replay separately. `git diff --check` passed. The native testing copy matches
+the rebuilt executable (SHA-256
+`739a3db2fa62aa9d10d81b1343a0ec059d8dd22dbbca141a935a8c436542f437`).
+Build-directory settings match their pre-test backups and the original
+Pirate Panic snapshot retains hash
+`4123ce28e54f2eaf7cda66e14374d530bf845b605550f5797d091bd66682e421`.
+One live window inspection briefly reported Not Responding; it subsequently
+responded without a restart, and five additional input-only jump routes
+completed. The cause of that transient UI stall remains unverified.
+
+## 2026-09-13 - v0.0.8 release preparation
+
+The owner confirmed the final rope behavior works and requested commit, push
+and a new release. Set the project and Windows download version to 0.0.8 and
+recorded carrying, rope animation, junction recovery and full net traversal
+in the release notes. The feature baseline is the complete 86-test pass above.
+GitHub inspection found no newer Mac artifact than v0.0.6; the release carries
+that original archive and checksum, with its older feature coverage explicitly
+labelled. Source-only changes are committed; release archives stay outside Git.

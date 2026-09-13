@@ -99,6 +99,8 @@ class CoopEmitterContractTests(unittest.TestCase):
         bounce_src, count = re.subn(r"\b\w+_M0X0\(cpu\)",
                                     "work_on_active_kong_M0X0(cpu)", bounce_src)
         self.assertEqual(count, 1)
+        rope_src = ''.join(bounce_src.replace('player_interaction_1B', name)
+                           for name in MODULE.ROPE_FUNCTIONS)
         palette_rom = bytes([0xA9, 0x1E, 0x00, 0x60]) + bytes(0x7FFC)
         palette_src = emit_function(palette_rom, bank=0, start=0x8000,
                                     entry_m=0, entry_x=0, func_name="CODE_BB8B66")
@@ -124,7 +126,10 @@ class CoopEmitterContractTests(unittest.TestCase):
                        "Dkc2CoopHandoffYValue": [0x6A, 0x0D]}.get(helper, [0x93, 0x05])
             op = [0xA5, 0x6E] if helper == "Dkc2CoopAnimalTypeValue" else [0xAD] + address
             op = {"Dkc2CoopScreenLeftValue": [0xA9, 0x10, 0],
-                  "Dkc2CoopScreenSpanValue": [0xA9, 0xE0, 0]}.get(helper, op)
+                  "Dkc2CoopScreenSpanValue": [0xA9, 0xE0, 0],
+                  "Dkc2CoopTeamPartnerValue": [0xAC, 0x97, 0x05],
+                  "Dkc2CoopRopeAnimationFollowerValue": [0xAD, 0x97, 0x05],
+                  "Dkc2CoopTeamStateValue": [0xB9, 0x2E, 0]}.get(helper, op)
             animal_ops.setdefault(name, []).extend(op * count)
         for name, ops in animal_ops.items():
             if name == "CODE_B9D705":
@@ -166,7 +171,7 @@ class CoopEmitterContractTests(unittest.TestCase):
                 animal_src += src_animal
         unit_text = ('#include "funcs.h"\n' + src + state_src + clipping_src +
                      interaction_src + bounce_src + palette_src + recovery_src +
-                     pickup_src + owner_src + animal_src)
+                     pickup_src + owner_src + animal_src + rope_src)
         with tempfile.TemporaryDirectory() as tmp:
             directory = Path(tmp)
             unit = directory / "bank_b8.c"
@@ -187,6 +192,7 @@ class CoopEmitterContractTests(unittest.TestCase):
         self.assertIn(MODULE.BANANA_TRACE + MODULE.BANANA_REPEAT, adapted)
         self.assertEqual(adapted.count("Dkc2CoopRecordInteractionSource(cpu, "), 1)
         self.assertEqual(adapted.count("Dkc2CoopBounceUsesFollower(cpu)"), 1)
+        self.assertEqual(adapted.count("Dkc2CoopRopeUsesFollower(cpu)"), 2)
         self.assertEqual(adapted.count("Dkc2CoopFollowerPaletteOffset(cpu, 0x1e)"), 1)
         self.assertEqual(adapted.count("Dkc2CoopRecoveryFollowerValue(cpu, "), 1)
         self.assertEqual(adapted.count("Dkc2CoopRecordPickupValue(cpu, "), 1)

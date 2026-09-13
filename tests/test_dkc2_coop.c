@@ -658,6 +658,171 @@ static void TestBananaCollectionPass(void) {
   Dkc2CoopResetSession();
 }
 
+static void TestTeamCarry(void) {
+  CpuState cpu = {0};
+  memset(s_fake_wram, 0, sizeof(s_fake_wram));
+  Dkc2CoopSetMode(kDkc2CoopSimultaneous);
+  Dkc2CoopResetSession();
+  WriteWord(0x060D, 1);
+  WriteWord(0x08C2, 0x4000);
+  WriteWord(0x0593, kDkc2CoopSlotA);
+  WriteWord(0x0595, 0x100);
+  WriteWord(0x0597, kDkc2CoopSlotB);
+  WriteWord(0x0599, 0x200);
+  WriteWord(0x0064, kDkc2CoopSlotB);
+  WriteWord(kDkc2CoopSlotA + 6, 100);
+  WriteWord(kDkc2CoopSlotB + 6, 125);
+  cpu.Y = kDkc2CoopSlotA;
+  ExpectU16("P2 targets P1", Dkc2CoopTeamPartnerValue(&cpu, kDkc2CoopSlotB), kDkc2CoopSlotA);
+  ExpectU16("distant pickup rejected", Dkc2CoopTeamStateValue(&cpu, 0), 0xFFFF);
+  ExpectU16("rejected pickup leaves leader", cpu_read16(&cpu, 0, 0x0593), kDkc2CoopSlotA);
+  WriteWord(kDkc2CoopSlotB + 6, 124);
+  WriteWord(kDkc2CoopSlotB + 10, 17);
+  ExpectU16("vertical separation rejected", Dkc2CoopTeamStateValue(&cpu, 0), 0xFFFF);
+  WriteWord(kDkc2CoopSlotB + 10, 16);
+  ExpectU16("airborne partner rejected", Dkc2CoopTeamStateValue(&cpu, 6), 0xFFFF);
+  WriteWord(0x0D7A, 0x0E9E);
+  ExpectU16("occupied hands rejected", Dkc2CoopTeamStateValue(&cpu, 0), 0xFFFF);
+  WriteWord(0x0D7A, 0);
+  WriteWord(0x006E, 1);
+  ExpectU16("mounted pair rejected", Dkc2CoopTeamStateValue(&cpu, 0), 0xFFFF);
+  WriteWord(0x006E, 0);
+  Dkc2CoopLoadLostMask(&cpu, 1, true);
+  ExpectU16("lost partner rejected", Dkc2CoopTeamStateValue(&cpu, 0x13), 0xFFFF);
+  Dkc2CoopResetSession();
+  ExpectU16("nearby independent pickup accepted", Dkc2CoopTeamStateValue(&cpu, 0), 0x22);
+  ExpectU16("P2 carrier becomes leader", cpu_read16(&cpu, 0, 0x0593), kDkc2CoopSlotB);
+  ExpectU16("carrier work swapped", cpu_read16(&cpu, 0, 0x0595), 0x200);
+  ExpectU16("passenger work swapped", cpu_read16(&cpu, 0, 0x0599), 0x100);
+  ExpectU16("carrier controller unchanged", cpu_read16(&cpu, 0, 0x08A2), 2);
+  ExpectU16("pickup does not teleport", cpu_read16(&cpu, 0, kDkc2CoopSlotA + 6), 100);
+  WriteWord(0x0D7A, kDkc2CoopSlotA);
+  WriteWord(kDkc2CoopSlotB + 0x2E, 0x13);
+  WriteWord(0x0504, 0x0100);
+  cpu.X = kDkc2CoopSlotB;
+  ExpectU16("movement preserves pickup animation", Dkc2CoopSelectStateWord(&cpu, 0x13), 0x13);
+  ExpectU16("carrier owns passenger", Dkc2CoopHeldOwnerValue(&cpu, 0), kDkc2CoopSlotB);
+  Dkc2CoopResetSession();
+  ExpectU16("carry survives host reset", Dkc2CoopHeldOwnerValue(&cpu, 0), kDkc2CoopSlotB);
+  WriteWord(0x0064, kDkc2CoopSlotA);
+  ExpectU16("passenger does not own itself", Dkc2CoopHeldObjectValue(&cpu, kDkc2CoopSlotA), 0);
+  WriteWord(0x0D7A, 0);
+  cpu.X = kDkc2CoopSlotA;
+  WriteWord(kDkc2CoopSlotA + 0x30, 0x16);
+  ExpectU16("airborne thrown player keeps physics", Dkc2CoopSelectStateWord(&cpu, 0x21), 0x21);
+  WriteWord(kDkc2CoopSlotA + 0x1E, 1);
+  WriteWord(kDkc2CoopSlotA + 0x24, 0xFA00);
+  ExpectU16("bouncing thrown player keeps physics", Dkc2CoopSelectStateWord(&cpu, 0x21), 0x21);
+  WriteWord(kDkc2CoopSlotA + 0x24, 0);
+  ExpectU16("landed thrown player regains control", Dkc2CoopSelectStateWord(&cpu, 0x21), 0);
+  ExpectU16("landed thrown player regains collisions", cpu_read16(&cpu, 0, kDkc2CoopSlotA + 0x30), 0x1E);
+  WriteWord(kDkc2CoopSlotB + 0x2E, 0);
+  cpu.Y = kDkc2CoopSlotB;
+  ExpectU16("P1 can carry in reverse", Dkc2CoopTeamStateValue(&cpu, 0), 0x22);
+  ExpectU16("P1 carrier becomes leader", cpu_read16(&cpu, 0, 0x0593), kDkc2CoopSlotA);
+  for (uint16_t mode = 0; mode <= 2; mode += 2) {
+    WriteWord(0x060D, mode);
+    ExpectU16("solo/contest partner unchanged", Dkc2CoopTeamPartnerValue(&cpu, 123), 123);
+    ExpectU16("solo/contest eligibility unchanged", Dkc2CoopTeamStateValue(&cpu, 0x2A), 0x2A);
+  }
+  WriteWord(0x060D, 1);
+  Dkc2CoopSetMode(kDkc2CoopClassic);
+  ExpectU16("classic eligibility unchanged", Dkc2CoopTeamStateValue(&cpu, 0), 0);
+  ExpectU16("null eligibility unchanged", Dkc2CoopTeamStateValue(NULL, 0), 0);
+}
+
+static void TestRopeTransitionReload(void) {
+  CpuState cpu = {0};
+  for (uint16_t slot = kDkc2CoopSlotA; slot <= kDkc2CoopSlotB; slot += 0x5E) {
+    for (uint16_t direction = 0; direction <= 1; ++direction) {
+      memset(s_fake_wram, 0, sizeof(s_fake_wram));
+      Dkc2CoopSetMode(kDkc2CoopSimultaneous);
+      cpu.X = slot;
+      WriteWord(0x060D, 1);
+      WriteWord(slot + 0x2E, 0x36);
+      WriteWord(slot + 0x36, (uint16_t)((slot == kDkc2CoopSlotA ? 0x34 : 0xD7) + direction));
+      WriteWord(slot + 0x3C, 0x8003);
+      WriteWord(slot + 0x3E, 0xDD63);
+      /* Synthetic script: native completion followed by terminal wait. */
+      WriteWord(0x8000, 0x0081);
+      WriteWord(0x8001, direction ? 0xDD90 : 0xDD7E);
+      WriteWord(0x8003, 0x0083);
+      WriteWord(0x8004, 0xD12B);
+      WriteWord(slot + 0x38, 0x100);
+      Dkc2CoopSelectStateWord(&cpu, 0x36);
+      ExpectU16("unfinished junction is not rewound", cpu_read16(&cpu, 0, slot + 0x3C), 0x8003);
+      WriteWord(slot + 0x38, 0);
+      WriteWord(0x8004, 0xD100);
+      Dkc2CoopSelectStateWord(&cpu, 0x36);
+      ExpectU16("foreign wait is not rewound", cpu_read16(&cpu, 0, slot + 0x3C), 0x8003);
+      WriteWord(0x8004, 0xD12B);
+      for (uint16_t mode = 0; mode <= 2; mode += 2) {
+        WriteWord(0x060D, mode);
+        Dkc2CoopSelectStateWord(&cpu, 0x36);
+        ExpectU16("solo/contest junction is untouched", cpu_read16(&cpu, 0, slot + 0x3C), 0x8003);
+      }
+      WriteWord(0x060D, 1);
+      Dkc2CoopSetMode(kDkc2CoopClassic);
+      Dkc2CoopSelectStateWord(&cpu, 0x36);
+      ExpectU16("classic junction is untouched", cpu_read16(&cpu, 0, slot + 0x3C), 0x8003);
+      Dkc2CoopSetMode(kDkc2CoopSimultaneous);
+      Dkc2CoopResetSession();
+      ExpectU16("saved junction keeps native transition state", Dkc2CoopSelectStateWord(&cpu, 0x36), 0x36);
+      ExpectU16("saved junction replays completion", cpu_read16(&cpu, 0, slot + 0x3C), 0x8000);
+      Dkc2CoopSelectStateWord(&cpu, 0x36);
+      ExpectU16("completion rewinds once", cpu_read16(&cpu, 0, slot + 0x3C), 0x8000);
+    }
+  }
+}
+
+static void TestRopeOwnership(void) {
+  CpuState cpu = {0};
+  memset(s_fake_wram, 0, sizeof(s_fake_wram));
+  Dkc2CoopSetMode(kDkc2CoopSimultaneous);
+  WriteWord(0x060D, 1);
+  for (uint16_t follower = kDkc2CoopSlotA; follower <= kDkc2CoopSlotB; follower += 0x5E) {
+    uint16_t leader = follower == kDkc2CoopSlotA ? kDkc2CoopSlotB : kDkc2CoopSlotA;
+    WriteWord(0x0593, leader);
+    WriteWord(0x0597, follower);
+    WriteWord(0x0064, leader); /* Last-updated sprite need not be the grabber. */
+    WriteWord(0x0A84, follower);
+    cpu.X = follower;
+    for (uint16_t state = 0x35; state <= 0x38; ++state) {
+      WriteWord(follower + 0x2E, state);
+      ExpectU16("independent climber advances animation and junction", Dkc2CoopRopeAnimationFollowerValue(&cpu, follower), 0xFFFF);
+    }
+    WriteWord(follower + 0x2E, 0x22);
+    ExpectU16("other animation states unchanged", Dkc2CoopRopeAnimationFollowerValue(&cpu, follower), follower);
+    ExpectBool("rope grab belongs to contact source", Dkc2CoopRopeUsesFollower(&cpu), 1);
+    Dkc2CoopResetSession();
+    ExpectBool("queued rope grab survives snapshot reset", Dkc2CoopRopeUsesFollower(&cpu), 1);
+    ExpectU16("rope grab keeps camera leader", cpu_read16(&cpu, 0, 0x0593), leader);
+    WriteWord(0x0A84, leader);
+    ExpectBool("leader rope grab keeps native work", Dkc2CoopRopeUsesFollower(&cpu), 0);
+  }
+  WriteWord(0x0597, 0x0E9E);
+  cpu.X = 0x0E9E;
+  WriteWord(cpu.X + 0x2E, 0x35);
+  ExpectU16("non-Kong animation unchanged", Dkc2CoopRopeAnimationFollowerValue(&cpu, cpu.X), cpu.X);
+  WriteWord(0x0A84, 0x0E9E);
+  ExpectBool("non-Kong rope source rejected", Dkc2CoopRopeUsesFollower(&cpu), 0);
+  WriteWord(0x0597, kDkc2CoopSlotB);
+  WriteWord(0x0A84, kDkc2CoopSlotB);
+  cpu.X = kDkc2CoopSlotB;
+  WriteWord(cpu.X + 0x2E, 0x35);
+  for (uint16_t mode = 0; mode <= 2; mode += 2) {
+    WriteWord(0x060D, mode);
+    ExpectBool("solo/contest rope work unchanged", Dkc2CoopRopeUsesFollower(&cpu), 0);
+    ExpectU16("solo/contest rope animation unchanged", Dkc2CoopRopeAnimationFollowerValue(&cpu, cpu.X), cpu.X);
+  }
+  WriteWord(0x060D, 1);
+  Dkc2CoopSetMode(kDkc2CoopClassic);
+  ExpectBool("classic rope work unchanged", Dkc2CoopRopeUsesFollower(&cpu), 0);
+  ExpectU16("classic rope animation unchanged", Dkc2CoopRopeAnimationFollowerValue(&cpu, cpu.X), cpu.X);
+  ExpectU16("null rope animation unchanged", Dkc2CoopRopeAnimationFollowerValue(NULL, 123), 123);
+  ExpectBool("null rope work unchanged", Dkc2CoopRopeUsesFollower(NULL), 0);
+}
+
 int main(void) {
   TestModeAccessors();
   TestModeFromName();
@@ -673,6 +838,9 @@ int main(void) {
   TestAnimalsAndHandoff();
   TestWideMovementBounds();
   TestBananaCollectionPass();
+  TestTeamCarry();
+  TestRopeOwnership();
+  TestRopeTransitionReload();
   if (s_failures > 0) {
     fprintf(stderr, "%d co-op test(s) failed\n", s_failures);
     return EXIT_FAILURE;

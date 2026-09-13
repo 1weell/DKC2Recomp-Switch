@@ -1767,3 +1767,52 @@ Optional character instruction callbacks resolve the co-op owner and held
 object using the existing value wrappers. Temporary callback context is
 restored synchronously before any guest execution. The interpreted attachment
 routine receives the same owner register as its generated C counterpart.
+
+## Rope contact ownership (2026-09-13)
+
+Terrain contact queues the grabbing Kong in the guest interaction source
+`$0A84`. Rope reactions `$11/$12` previously always selected the active Kong's
+work pair, so a follower's valid contact attached the leader instead. The
+source-owned adapter redirects their active-work call to the existing
+inactive-work routine when `Dkc2CoopRopeUsesFollower` identifies the source as
+the other fixed Kong slot. Guest terrain results and native rope state,
+animation, movement and jump code are retained. Camera leadership and fixed
+controller assignments are unchanged. The source is already serialized by
+guest snapshots, so this needs no new host state. Classic TEAM, solo, contest
+and non-Kong sources keep the original call. Generation checks require one
+call in each named reaction and reject misplaced or missing adaptations.
+
+The single-rope animation callbacks `CODE_B9DAB7`, `CODE_B9DAE0`,
+`CODE_B9DB19` and `CODE_B9DB45` also skip the AI follower, as do double-rope
+callbacks `CODE_B9DD61`, `CODE_B9DD7C`, `CODE_B9DD8E`, `CODE_B9DD9C` and
+`CODE_B9DE17`. Horizontal-rope callbacks `CODE_B9DDB7`, `CODE_B9DDC9` and
+`CODE_B9DDE8`, and the shared facing callback `CODE_B9E013`, use the same
+policy. Their `$0597` comparison operands now exclude independently
+controlled Kongs in rope states `$35` through `$38` from that early return.
+The original callbacks complete junctions, select Up/Down sequences and
+advance frames using the Kong's own movement; other states and policies keep
+their original operands. Rich headless traces expose animation and graphic
+IDs, and the rope replay requires multiple distinct frames in each direction.
+Allowing the native facing change is necessary to cross consecutive net
+columns: otherwise the follower repeats its turn animation indefinitely.
+
+An older simultaneous snapshot can already have skipped the junction's final
+callback and parked at a terminal animation wait in state `$36`. Before state
+dispatch, the co-op policy validates the transition animation, expired timer,
+speed callback and native script's `$81` completion followed by `$83/$D12B`.
+Only this exact finished transition rewinds three script bytes to replay its
+own completion callback. Unfinished transitions retain their remaining frames;
+coordinates and state are left to the native callback. No host-only recovery
+flag or snapshot format change is required.
+
+## Nearby TEAM partner carrying (2026-09-13)
+
+The source-owned co-op adapter wraps the team-up action's partner selector
+and state eligibility operand. Simultaneous players target the opposite fixed
+slot; only nearby, present, on-foot Kongs qualify. The accepted carrier takes
+the guest active/work selector pair, preserving actor positions and controller
+ports. Native pickup/drop/throw reactions and animations remain authoritative.
+Held-Kong ownership resolves from those guest selectors after save/load too.
+The state policy preserves the carrier's pickup wait and restores independent
+control and collision flags when a thrown partner has landed. Classic, solo
+and contest retain the original eligibility and state paths.

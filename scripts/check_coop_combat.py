@@ -18,7 +18,7 @@ from check_coop_route import TEAM_START, SEPARATE_PLAYERS, check
 
 
 def run_route(runner, rom, directory, name, route, *, state=None, save=None,
-              aspect=None, edge=None, kongs_pack=None):
+              aspect=None, edge=None, kongs_pack=None, submode="06"):
     frames = sum(duration for _, duration in route)
     inputs, trace = directory / f"{name}.input", directory / f"{name}.jsonl"
     inputs.write_text("\n".join(f"{word:06x}*{duration}" for word, duration in route),
@@ -42,7 +42,7 @@ def run_route(runner, rom, directory, name, route, *, state=None, save=None,
     check(result.returncode == 0, result.stdout + result.stderr)
     data = [json.loads(line) for line in trace.read_text().splitlines()]
     check(len(data) == frames, f"{name}: incomplete trace")
-    check(all(row["mode"] == 1 and row["sub"] == "06" for row in data[0 if state else 3017:]),
+    check(all(row["mode"] == 1 and row["sub"] == submode for row in data[0 if state else 3017:]),
           f"{name}: not in TEAM gameplay")
     return data
 

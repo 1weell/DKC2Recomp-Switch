@@ -79,6 +79,9 @@ BOUNCE_HANDLER = re.compile(
 BOUNCE_CALL = "work_on_active_kong_M0X0(cpu)"
 BOUNCE_REDIRECT = ("(Dkc2CoopBounceUsesFollower(cpu) ? "
                    "work_on_inactive_kong_M0X0(cpu) : " + BOUNCE_CALL + ")")
+ROPE_FUNCTIONS = ("player_interaction_11", "player_interaction_12")
+ROPE_REDIRECT = ("(Dkc2CoopRopeUsesFollower(cpu) ? "
+                 "work_on_inactive_kong_M0X0(cpu) : " + BOUNCE_CALL + ")")
 PALETTE_HANDLER = re.compile(
     r"RecompReturn CODE_BB8B66_M0X0\(CpuState \*cpu\) \{.*?^\}",
     re.MULTILINE | re.DOTALL)
@@ -157,6 +160,23 @@ ANIMAL_TYPE_FUNCTIONS = {
 }
 
 POLICY_READS = [
+    # Single/double-rope hanging, direction, speed and junction completion
+    # callbacks normally skip the AI follower. Independent climbers use them.
+    ("CODE_B9DAB7", FOLLOWER_READ, 1, "Dkc2CoopRopeAnimationFollowerValue"),
+    ("CODE_B9DAE0", FOLLOWER_READ, 1, "Dkc2CoopRopeAnimationFollowerValue"),
+    ("CODE_B9DB19", FOLLOWER_READ, 1, "Dkc2CoopRopeAnimationFollowerValue"),
+    ("CODE_B9DB45", FOLLOWER_READ, 1, "Dkc2CoopRopeAnimationFollowerValue"),
+    ("CODE_B9DD61", FOLLOWER_READ, 1, "Dkc2CoopRopeAnimationFollowerValue"),
+    ("CODE_B9DD7C", FOLLOWER_READ, 1, "Dkc2CoopRopeAnimationFollowerValue"),
+    ("CODE_B9DD8E", FOLLOWER_READ, 1, "Dkc2CoopRopeAnimationFollowerValue"),
+    ("CODE_B9DD9C", FOLLOWER_READ, 1, "Dkc2CoopRopeAnimationFollowerValue"),
+    ("CODE_B9DDB7", FOLLOWER_READ, 1, "Dkc2CoopRopeAnimationFollowerValue"),
+    ("CODE_B9DDC9", FOLLOWER_READ, 1, "Dkc2CoopRopeAnimationFollowerValue"),
+    ("CODE_B9DDE8", FOLLOWER_READ, 1, "Dkc2CoopRopeAnimationFollowerValue"),
+    ("CODE_B9DE17", FOLLOWER_READ, 1, "Dkc2CoopRopeAnimationFollowerValue"),
+    ("CODE_B9E013", FOLLOWER_READ, 1, "Dkc2CoopRopeAnimationFollowerValue"),
+    ("team_up_action", FOLLOWER_READ, 2, "Dkc2CoopTeamPartnerValue"),
+    ("team_up_action", re.compile(r"cpu_read16\(cpu, \(uint8\)\([^;\n]*?0x002e[^;\n]*?\)\)\)"), 1, "Dkc2CoopTeamStateValue"),
     ("bank_B5_F776", re.compile(r"cpu_read16\(cpu, cpu->DB, \(uint16\)\(0x0d44\)\)"), 1, "Dkc2CoopBananaSecondWidth"),
     ("prevent_sprite_from_leaving_level_x", re.compile(r"(?:(?<= = )|(?<=Dkc2CoopScreenLeftValue\(cpu, ))0x10\b"), 1, "Dkc2CoopScreenLeftValue"),
     ("prevent_sprite_from_leaving_level_x", re.compile(r"(?:(?<= = )|(?<=Dkc2CoopScreenSpanValue\(cpu, ))0xe0\b"), 1, "Dkc2CoopScreenSpanValue"),
@@ -302,6 +322,20 @@ def bounce_candidate(sources):
     return path, handler, redirects
 
 
+def require_rope_calls(sources):
+    anchored = 0
+    for name in ROPE_FUNCTIONS:
+        calls = named_candidates(sources, name, re.compile(re.escape(BOUNCE_CALL)))
+        if len(calls) != 1:
+            raise ValueError(f"expected one rope reaction active-Kong call in {name}")
+        path, pos, length = calls[0]
+        prefix = ROPE_REDIRECT[:-len(BOUNCE_CALL)-1]
+        if sources[path][pos-len(prefix):pos+length+1] == ROPE_REDIRECT:
+            anchored += 1
+    if sum(s.count("Dkc2CoopRopeUsesFollower(") for s in sources.values()) != anchored:
+        raise ValueError("out of place rope reaction adaptation")
+
+
 def generated_units(generated_dir: Path) -> list[Path]:
     return sorted(generated_dir.glob("*.c"))
 
@@ -388,6 +422,7 @@ def apply_overrides(generated_dir: Path) -> list[Path]:
     require_single(named_candidates(sources, "CODE_B9D705", HELD_READ_WORD),
                    "recovery held object", "Dkc2CoopHeldObjectValue", sources)
     bounce_candidate(sources)
+    require_rope_calls(sources)
     require_single(recovery_candidates(sources), "Kong recovery follower compare",
                    "Dkc2CoopRecoveryFollowerValue", sources)
     require_single(palette_candidates(sources), "follower palette offset",
@@ -469,6 +504,14 @@ def apply_overrides(generated_dir: Path) -> list[Path]:
         sources[bounce_path] = (source[:handler.start()] +
             handler.group().replace(BOUNCE_CALL, BOUNCE_REDIRECT, 1) +
             source[handler.end():])
+    for name in ROPE_FUNCTIONS:
+        path, pos, length = named_candidates(sources, name, re.compile(re.escape(BOUNCE_CALL)))[0]
+        prefix = ROPE_REDIRECT[:-len(BOUNCE_CALL)-1]
+        if sources[path][pos-len(prefix):pos+length+1] != ROPE_REDIRECT:
+            sources[path] = sources[path][:pos] + ROPE_REDIRECT + sources[path][pos+length:]
+        declaration = "RecompReturn work_on_inactive_kong_M0X0(CpuState *cpu);"
+        if declaration not in sources[path]:
+            sources[path] = sources[path].replace('#include "funcs.h"', '#include "funcs.h"\n' + declaration, 1)
     palette = palette_candidates(sources)
     if require_single(palette, "follower palette offset",
                       "Dkc2CoopFollowerPaletteOffset", sources):
