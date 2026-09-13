@@ -1,18 +1,16 @@
 # DKC2Recomp
-Note: This Recompilation is not complete and not ready to be released. Pre-Release.
-
 > This recompilation is a byproduct of developing
 > [snesrecomp](https://github.com/mstan/snesrecomp): the games are the proving
-> ground, while the reusable framework is the larger goal. This is an early
-> preview, not an official port. Expect rough edges and please report any
-> reproducible gameplay, video, or audio regressions.
+> ground, while the reusable framework is the larger goal. This is a community
+> recompilation, not an official port. Please report any reproducible gameplay,
+> video, or audio regressions.
 
 Static recompilation of *Donkey Kong Country 2: Diddy's Kong Quest* for SNES
 into native desktop applications, using the `snesrecomp` framework. Windows
-and Apple-silicon macOS builds are available, with the project still explicitly
-in alpha. The native Mac application includes an AppKit menu, Dock icon,
-platform user-data directory, and Mac-specific exact-rate frame pacing. It is
-ad-hoc signed for testing; notarization remains open.
+and Apple-silicon macOS builds are available. The native Mac application
+includes an AppKit menu, Dock icon, platform user-data directory, and
+Mac-specific exact-rate frame pacing. It is ad-hoc signed; notarization remains
+open.
 
 The 65816 game program is translated to native C where analysis can prove an
 exact entry state. The current profile emits 3,475 exact AOT variants and keeps
@@ -22,13 +20,35 @@ fallback. SNES hardware outside the main CPU—the PPU,
 SPC700/S-DSP, DMA/HDMA, controllers, and cartridge mapping—is modeled by the
 shared runtime.
 
+## Optional Donkey and Kiddy characters
+
+Open the in-game pause menu with **Escape**, then choose **Characters**.
+Each original character slot can use Donkey Kong or Kiddy Kong; **Donkey +
+Kiddy** selects both, and **Original pair** restores Diddy and Dixie. The
+game remembers your choices between runs.
+Animal riders use mount-specific seated/hanging poses and attachment points.
+Hold **Down + Y** on the ground for Donkey's hand slap or Kiddy's body slam.
+Barrel carrying and throwing use each character's original style and timing.
+Neither replacement inherits Dixie's helicopter flight. **Select** plays a
+paired tag handoff when swapping Kongs. Donkey/Kiddy team pickup and throws
+use synchronized poses and shoulder/hand placement (private pack v5).
+Kiddy uses a seated recovery after a missed throw; regenerate earlier packs
+if he repeatedly snaps between hurt poses while waiting for the leader.
+Other movement/collision still uses
+DKC2's engine; this is not a complete DKC1/DKC3 mechanics transplant.
+Replacement animations freeze during Start or Escape pause. Re-import older
+packs for these changes.
+
+Create the private character pack from your own Project Kongs checkout using
+[the import instructions](docs/PROJECT_KONGS.md), then select **Load character
+pack...**. Game art is never included in this source tree or the app bundle.
+
 ## Quick start
 
 ### Windows release
 
-1. Download `DKC2Recomp-windows-x64-v0.0.1.zip` from the
-   [upstream releases](https://github.com/mstan/DKC2Recomp/releases) and
-   extract the complete archive.
+1. Download `DKC2Recomp-v0.0.5-Windows-x64.zip` from
+   [Releases](../../releases) and extract the complete archive.
 2. Run `DKC2Recomp.exe`.
 3. In the Dear ImGui launcher, select your own legally obtained North American
    v1.0 ROM and choose **Play**.
@@ -78,16 +98,43 @@ Missing tracks fall back to SNES music. The external folder preference is saved
 in `msu1.cfg`. No patched ROM or `.msu` marker is needed. See
 [MSU-1 audio](docs/MSU1_AUDIO.md) for state/rewind behavior and validation.
 
+### Unlocking every level in a save
+
+`scripts/dkc2_unlock_levels.py` marks every real level of a save file as
+cleared, which opens every path on the world maps and every world whose
+boss it clears, and can open the Lost World and grant coins:
+
+```bash
+python3 scripts/dkc2_unlock_levels.py --save "$HOME/Library/Application Support/Flat2VR/DKC2Recomp/saves/save.srm" --rom /private/path/dkc2.sfc --file all --lost-world --kremkoins 75 --banana-coins 99 --snapshot "$HOME/Library/Application Support/Flat2VR/DKC2Recomp/saves/dkc2s0.sav"
+```
+
+It backs each file up beside itself first (`.before-unlock`, numbered
+when one exists). Quit the app before running it, since the app writes
+its own copy of the SRAM back on exit, and start from the file select
+afterwards. `--lost-world` marks every Klubba kiosk as paid, so Klubba
+lets the Kongs through without a toll, and records the five Lost World
+levels as beaten, which opens Krocodile Kore. `--kremkoins` sets the
+Kremkoin count the kiosks charge (15 each; the game holds 75). Banana
+Coins are not stored in the save file, the game zeroes them whenever it
+loads a file, so `--banana-coins` sets them only in the quick save named
+by `--snapshot`. The percentage is recounted by the game at its next
+save. `--no-levels` leaves the cleared flags alone, and `--repair`
+recomputes the header of a file the game shows as empty because its sums
+disagree while its data is intact.
+
 ### Native macOS release
 
-1. Download `DKC2Recomp-v0.0.5-macOS-arm64.zip` from
+1. Download `DKC2Recomp-v0.0.6-macOS-arm64.zip` from
    [Releases](../../releases) and extract it.
 2. Open `DKC2Recomp.app` and select your own legally obtained North American
    v1.0 ROM. The ROM remains outside the application bundle.
 
-The v0.0.5 Mac archive is an ad-hoc-signed Apple-silicon alpha build, not a
-notarized distribution. If Gatekeeper quarantines the downloaded archive,
-open the app from Finder with **Control-click > Open** and confirm once.
+The v0.0.6 Mac archive is an ad-hoc-signed Apple-silicon build and is not
+notarized. It adds the CRT television display, the Retina pause-menu fix, and
+the optional Donkey/Kiddy character slots; the most recent Windows build is
+the `v0.0.5-r2` archive, which predates them. If Gatekeeper quarantines the
+downloaded archive, open the app from Finder with **Control-click > Open** and
+confirm once.
 
 ### Native macOS source build
 
@@ -246,7 +293,9 @@ Escape returns to windowed mode without also opening the overlay; Escape then
 retains its normal overlay behavior. The SDL host also accepts the controller
 Guide button; Start+Back is the portable fallback. The overlay provides Resume,
 Settings, Controls, Assist Tools / Cheats, Credits, and Quit.
-Gameplay input and audio are paused while it is open.
+Gameplay input and audio are paused while it is open. Its first placement is
+centered from ImGui's logical display size, including on Retina/high-DPI
+windows, and the title bar can then be dragged to reposition it.
 
 The Settings page exposes the launcher's display, audio, filtering, screen
 model, widescreen, skip-launcher, and Restore Defaults choices. Volume,
@@ -474,13 +523,37 @@ colors are close. Its mode combo adds the stages one at a time and sliders
 scale the edge blend, the softness, and the shading;
 `DKC2_UPSCALER=nearest|bilinear|reconstruct` overrides the saved choice in SDL.
 
-Visible OpenGL gameplay windows request a one-buffer swap interval to reduce
-tearing. The accepted status is written with the presentation backend in
-`diagnostics/last_run_report.json`; `on` means the graphics driver accepted
-the request, while `request-failed` or `unsupported` means it did not. Hidden
-automation disables the request so driver pacing cannot block unattended
-tests, and GDI synchronization remains managed by the Windows compositor.
-This presentation request does not change the emulated 60.098811862 Hz clock.
+The Settings page's **Display** combo switches the Mac app from the flat
+panel presentation to an optional **CRT television** simulation
+(`docs/CRT_DISPLAY_PLAN.md` is its design). It is not a scanline overlay:
+every source line becomes an electron-beam profile whose width grows with
+its brightness, so bright lines widen and merge while dark lines stay thin,
+and the beam is normalised so the picture keeps its brightness. A fine
+aperture-grille phosphor mask (three panel pixels per triad, below the eye's
+resolving limit at arm's length), a soft glow and halation from blurred
+copies, a gently curved tube face with rounded corners, and a dither finish
+the look. "Living room" is the default preset; "Studio monitor" is sharper
+and flat, "Soft" is wider and glowier, and the sliders (scanlines,
+sharpness, mask, glow, halation, curvature) make a custom tube. The
+upscaler is bypassed while the tube is on, and the tube fades to the flat
+image in small windows where its lines cannot be drawn.
+`DKC2_DISPLAY=flat|crt`, `DKC2_CRT_PRESET=living-room|studio|soft`, and
+the `DKC2_CRT_*` sliders override the saved choice. The frame after the
+phosphor-color model is the tube's input, so those models still apply; the
+native frame, its hashes, and save states are untouched.
+
+Visible OpenGL gameplay windows on Windows request a one-buffer swap interval
+to reduce tearing. The accepted status is written with the presentation
+backend in `diagnostics/last_run_report.json`; `on` means the graphics driver
+accepted the request, while `request-failed` or `unsupported` means it did
+not. Hidden automation disables the request so driver pacing cannot block
+unattended tests, and GDI synchronization remains managed by the Windows
+compositor. The Mac app instead paces each frame on the display's own refresh
+tick and keeps the audio in step with dynamic rate control, so every frame is
+shown for exactly one refresh on a 60-Hz or ProMotion display;
+`DKC2_DISPLAY_LOCK=0` returns to the host clock and `DKC2_PACING_LOG=<file>`
+records the cadence for `scripts/analyze_pacing_log.py`. Neither changes the
+emulated 60.098811862 Hz clock.
 
 Save states are named `saves/dkc2s0.sav` through `saves/dkc2s4.sav`; the
 overlay presents these as Slots 1–5 and the native Mac Game menu uses Slot 1.

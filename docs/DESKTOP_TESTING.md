@@ -152,6 +152,13 @@ controller input is suppressed, and queued audio is cleared/paused until
 Resume or Escape closes the menu. The pages are Main, Settings, Assist Tools /
 Cheats, Controls, and Credits.
 
+On first open, confirm the pause window is centered in the logical game window,
+especially on a Retina/high-DPI Mac where the OpenGL drawable is larger than
+the window in points. Drag the title bar and confirm the menu follows the
+pointer without snapping back to center. Close and reopen it in the same run to
+confirm the moved position is retained; a fresh app launch should center it
+again.
+
 Assist Tools default off. Enabling them permits the existing 3x rewind,
 3x fast-forward, five-slot overlay controls, and configurable state shortcuts;
 disabling the gate makes those bindings inert. The native Mac Game menu's
@@ -225,6 +232,39 @@ luminance, and black floor. It intentionally does not yet simulate scanlines,
 screen curvature, a bezel, or phosphor persistence. Nearest/Bilinear is a
 separate scaling choice. If OpenGL cannot start, the window is recreated and
 the atomic GDI compatibility presenter receives the same transformed pixels.
+
+The Mac app's pause menu adds a **Display** choice: the flat panel
+presentation or the CRT television simulation described in
+`docs/ARCHITECTURE.md`. `DKC2_DISPLAY=flat|crt` selects it for a run (the
+choice is remembered, like the upscaler), `DKC2_CRT_PRESET=living-room|
+studio|soft|custom` picks a preset, and `DKC2_CRT_SCANLINES`,
+`DKC2_CRT_SHARPNESS`, `DKC2_CRT_MASK=none|grille|grille-coarse|slot`,
+`DKC2_CRT_MASK_STRENGTH`, `DKC2_CRT_GLOW`, `DKC2_CRT_HALATION`, and
+`DKC2_CRT_CURVATURE` set the sliders (0 to 100). To judge the tube without
+a visible window, capture the same preserved state twice at the panel's
+size and compare:
+
+```sh
+for display in flat crt; do
+  DKC2_USER_DIR=/tmp/crt-user SNESRECOMP_NO_LAUNCHER=1 \
+  DKC2_DESKTOP_TEST_HIDDEN=1 DKC2_DESKTOP_TEST_FRAMES=70 \
+  DKC2_DESKTOP_DISABLE_SRAM=1 DKC2_ASPECT=16:9 \
+  DKC2_DESKTOP_TEST_WINDOW=1728x1117 DKC2_DISPLAY=$display \
+  DKC2_CRT_CURVATURE=0 \
+  DKC2_DESKTOP_TEST_LOADSTATE=/absolute/path/to/state.sav \
+  DKC2_DESKTOP_SCREENSHOT=/tmp/$display.ppm DKC2_DESKTOP_SCREENSHOT_FRAME=60 \
+  build/macos/DKC2Recomp.app/Contents/MacOS/DKC2Recomp "$ROM"
+done
+python3 scripts/crt_capture_compare.py /tmp/flat.ppm /tmp/crt.ppm
+```
+
+`DKC2_DESKTOP_TEST_WINDOW` is in points, so 1728x1117 is the 16-inch
+panel's 3456x2234 drawable. The compare script passes when the mean linear
+luminance is within three percent, the strongest short period in the row
+profile is the line pitch, and there is no periodic residual between the
+smoothed profiles; curvature is switched off for the capture because the
+warp shifts rows against the flat reference. The state path must be
+absolute, since the app changes into its user directory.
 
 For repeatable tests without changing `launcher.cfg`, set `DKC2_SCREEN` to
 `raw`, `crt`, `composite`, or `trinitron`. `DKC2_DESKTOP_REQUIRE_GPU=1` turns an
@@ -517,6 +557,22 @@ Manual acceptance must cover:
    margins; and
 5. death/restart, bonus entry, goal, map, and save-state transitions.
 
+
+### Optional Kong team animation checks
+
+With a v5 private pack, test Donkey carrying Kiddy and Kiddy carrying Donkey
+in both original slots. Press the SNES A button to team up, walk and turn in
+both directions, jump/land, then press Y for a forward throw or Up + Y for an
+upward throw. Inspect shoulder placement, the body following the hands during
+windup, release, and recovery. Pause with Start during windup, resume, and
+confirm exactly one release; dropping, damage and restoring a snapshot must
+abandon the old paired placement. Repeat with original choices for native
+behavior. Mixed original/replacement partner placement remains native.
+
+Also leave the thrown Kong waiting for several seconds after a missed throw.
+Kiddy must sit up once, hold that pose without upright/horizontal snapping,
+and return to following when the leader catches up. Check that a save loaded
+directly into this waiting state behaves the same way.
 
 ## Windows dropdown regression (2026-09-13)
 

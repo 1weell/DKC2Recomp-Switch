@@ -5236,6 +5236,37 @@ offline matcher put it at the 32-byte stride with every cell matching.
 Classified as narrow vertical, the deck continues into both margins and
 the glide walks the arena from wall to wall with the Kongs.
 
+## 2026-09-03 - Unlocking every level, and a save slot the game called empty
+
+The owner asked for every level unlocked in the current save. The game's
+own save routines settled the format: `update_save_buffer` at `$BB:C5E0`
+packs the file at WRAM `$56CA`, `copy_save_to_sram` at `$BB:C5B8` copies
+680 bytes to SRAM offsets 8, 688, and 1368 for the three files,
+`calculate_checksum` at `$BB:C571` sums and exclusive-ors the words from
+offset 6 to 672, and `validate_save_file` at `$BB:C526` checks both
+against the header and the `$52` signature. The cleared-level flags are
+sixteen words at data offset `$8D`, one bit per level number, set by
+`set_current_level_as_cleared` at `$BB:8158` and read by
+`is_level_cleared` at `$BB:825C`, and the level numbers that are real
+levels are the entries of the pointer table at `$FD:0000` whose headers
+run longer than the two-byte placeholders: 143 of 205.
+`scripts/dkc2_unlock_levels.py` sets them all, recomputes the header,
+and backs the save up; a boot of the patched image reaches the file
+select with every file present and enters a level from it.
+
+Two things fell out. The percentage on the file select is stored in the
+file and recounted by the game at its next save, so it reads as before
+until then. And the third slot showed as empty on the file select: its
+SRAM copy's stored sum was one greater than the sum of its data, while
+the backup save from fifteen minutes earlier held the same data with the
+right sum; the two images differ in exactly that byte, SRAM offset
+`$558`. A single byte incremented in SRAM with no other change smells
+like a stray write landing in the SRAM bank, which is worth a watch on
+that address. The tool's `--repair` recomputed the header, since the
+data matched the backup byte for byte, and the quick save, which was on
+that slot with four more levels than the SRAM copy, had its in-memory
+flags set as well so restoring it does not write the old flags back.
+
 ## 2026-09-03 - Native macOS v0.0.5 fork release
 
 The work since v0.0.4 was packaged for the `elliotttate/DKC2Recomp` fork
@@ -5255,6 +5286,433 @@ Extraction into a clean temporary directory preserved both the version and
 the signature, and the extracted executable was byte-identical to the
 packaged build. The configured macOS suite passed 50/50 and the 44-state
 Quick Save corpus ran with no failures immediately before packaging.
+
+## 2026-09-03 - The Lost World toll, and coins the file never keeps
+
+Every level was cleared and the owner still could not reach the Lost
+World. The kiosk explained it: Klubba's screen takes the NPC coin count
+through `get_player_coin_count_npc` at `$B4:A1C6`, which reads Kremkoins
+(`$08CC`) for Klubba and Banana Coins (`$08CA`) for everyone else, and
+the purchase path at `$B4:9C66` subtracts the kiosk's price of 15 from
+it. The file held 14. Paying never sets a shop flag: the per-NPC
+handlers at `$B4:9DD2` return carry clear for Klubba, and the success
+continuation writes the Swanky, Wrinkly, and Funky bytes at `$08D2`,
+`$08E0`, and `$08E7` but skips NPC 8. What the kiosk tests instead, at
+`$B4:91F4`, is bit `1 << world` of `$08FA`, set by the transition at
+`$B4:9F53` when the Kongs go through, and the map init at `$B4:80CD`
+compares `$08F9`, incremented at `$B4:B26B` when a level numbered 196 to
+200 is newly cleared, with five before it opens Krocodile Kore. Both
+bytes ride in the save record's mirror of `$08D2..$0901` at data offsets
+`$DB` and `$DC`. Banana Coins are not in the record at all: the loader
+at `$B4:800E` zeroes `$08CA` with the other counters and then fills only
+the Kremkoin and DK coin bytes, so a loaded file always starts with none.
+
+`scripts/dkc2_unlock_levels.py` grew `--lost-world`, which sets the
+kiosk mask for worlds 1 to 7 and the count to five, `--kremkoins`, and
+`--banana-coins`, which can only change a quick save's memory image and
+refuses to pretend otherwise. Applied to all three files with 75
+Kremkoins, and to the quick save with 99 Banana Coins as well. A
+headless boot of the patched SRAM reaches the file select showing 75 on
+every file, enters the first file onto the Flying Krock map, and its
+WRAM holds 75 Kremkoins, the `$FE` mask, and the count of five; the map
+init ran its one-off thirty-frame all-beaten event on that load and set
+`$08FC`'s `$0C` bits, as the game does after the fifth Lost World level.
+Klubba himself was not walked to in this run, so his free passage rests
+on the read of `$B4:91F4`. The tool now numbers a backup instead of
+overwriting one; this run overwrote the first `.before-unlock` copies
+from the level unlock, so the state before any unlock survives only as
+the app's own `save.srm.bak`.
+
+## 2026-09-03 - Frame pacing on the display's own refresh
+
+The owner reported that the game did not always feel smooth even while
+the title showed 60 frames per second. The FPS counter counts emulated
+frames per second, which the Mac host has always delivered; what it does
+not count is how long each frame stayed on the panel. The visible Mac host
+disabled OpenGL vsync and presented each frame from its own absolute Mach
+deadline at 60.098811862 Hz, so the frames free-ran against the display's
+refresh. On this machine's ProMotion panel that phase drifted through a
+refresh every few seconds, and a pacing log written from the loop showed
+what that cost during scrolling gameplay: of 1,260 frames, 23 were never
+shown and 21 were shown twice, about one hiccup every half second, with the
+present landing anywhere from 16.6 ms before its refresh to 10 ms after it,
+and the swap itself occasionally blocking for 11 to 31 ms when the
+60.0988-Hz stream ran ahead of the 60-Hz compositor.
+
+The fix makes the display the cadence authority. `-[NSWindow
+displayLinkWithTarget:selector:]` (macOS 14) delivers the window's refresh
+ticks on a dedicated run-loop thread, with a preferred frame-rate range of
+60 so the ProMotion panel ticks at 60 rather than 120; the ticks measured
+16.667 ms apart with a 0.05 ms spread, so the request is honoured. A
+portable pacer (`runner/desktop_pacer.c`) locks when one to four ticks per
+frame keep the frame rate within 2% of native, covering 60, 59.94, 120, and
+240 Hz and refusing 50, 75, 90, and 144, and the loop then waits for the
+tick `ticks_per_frame` after the one the previous frame followed and
+presents right behind it. Every one of the 1,259 locked frames in the same
+gameplay run was shown for exactly one refresh, presented 13.5 ms ahead of
+it with a 1.4 ms spread and a worst case of 5.9 ms. Running the game at the
+display's 60.000 Hz is 0.16% slow, so the audio no longer relies on the
+frame clock: `runner/desktop_audio_rate.c` resamples each frame's samples
+within half a percent of unity from an average of the queue fill, aiming at
+half a device pull plus two frames, which held the fill between 1,400 and
+1,700 frames across the run with the ratio never past 1.0025. The device
+buffer dropped from 2048 to 1024 frames on the way, halving the queue's
+latency, and the same control now runs under the fallback host clock, where
+it also absorbs the audio device's clock drifting from the host's.
+
+The first measurement runs were misleading in two ways worth keeping. The
+state they were meant to load never loaded, because the app changes into
+its user directory at start and the state path was relative, so they timed
+the title sequence; and one of them contained multi-second stalls and 512
+presents of one frame with the audio reset, which was the overlay open,
+not the pacer. Runs on the loaded state with the stage timings in the log
+had neither. `scripts/analyze_pacing_log.py` reads the log and estimates
+the refreshes each frame was shown for, which is the number that answers
+the owner's report; it lives in the repository with a test so the next
+pacing question starts from the same instrument.
+
+## 2026-09-04 - CRT television display for the Retina panel
+
+The owner asked for an optional CRT mode that looks like an older
+television on the 16-inch MacBook Pro, explicitly not the kind of shader
+that lays dark lines over the picture and dims it. The plan
+(`docs/CRT_DISPLAY_PLAN.md`) and its build are the same day's work.
+
+The premise is physical. Fullscreen on this panel the frame lands at 8.7
+to 10 panel pixels per scanline and 10 to 12 per column, so a source pixel
+is about a millimetre across, the scale of a 14-inch professional monitor.
+A fixed line pattern at that fractional pitch beats against the source rows
+and always takes the same light from every row; a beam does neither. The
+new `desktop_crt.c` model gives every source line a Gaussian whose width
+grows with its brightness per channel (0.50 to 0.18 line pitches at the
+dark end from the scanlines slider, 0.50 for white), normalised so the
+periodic sum averages exactly the source brightness for any width: a white
+field ripples by about five percent, a dim one shows its lines. The pure C
+model is unit-tested for that conservation across widths, for the mask
+gain, for the fades that switch the beam and mask off in small windows,
+and for the name and preset parsing; the shader is the same arithmetic in
+GLSL 1.20 on the legacy 2.1 context, which a probe showed exposes float
+textures, framebuffer objects, and sRGB on the M3 Max.
+
+Five passes in half-float: lines (sRGB decode plus a horizontal Gaussian in
+source pixels), beam, a 4x4 downsample and separable blurs for glow and
+again for halation, and compose (cylindrical curvature with rounded
+corners and a vignette, the glow added energy-neutrally, an aperture-grille
+mask in window pixels with the inverse of its mean transmission as gain and
+a soft knee above 0.9, sRGB encoding, a triangular dither). The presenter
+was refactored so the window and the hidden capture share one render
+function, since the old capture path redrew a single quad and would have
+missed a multi-pass chain; `DKC2_DESKTOP_TEST_WINDOW` sizes a hidden window
+in points so captures come out at the panel's 3456x2234.
+
+Verification on preserved states (Bramble Blast's barrel start and the
+castle start, a bright and a dark scene) with `scripts/crt_capture_compare.py`:
+mean linear luminance 0.995 and 0.997 of the flat capture, strongest row
+period 9 px for the 8.66-px pitch, and no periodic residual once the check
+was done in linear light with the scene-following trend removed (the first
+version compared gamma-space row means and reported the beam's own vertical
+spread and the knee's highlight compression as a 20% "envelope", and the
+first pitch detector picked the second harmonic because 2 x 8.66 lands
+nearer an integer lag). The captures read as a tube: lines soft in the
+castle's shadows, gone in the bramble sky, the mask a texture rather than a
+grid at the panel's density. The living-room default was softened from
+scanlines 70 to 55 after the first look at the dark scene.
+
+What is honest about the SDR panel: at mask strength 0.3 a white field
+loses a few percent to the knee, and a full-strength mask cannot be made
+bright without HDR headroom that SDL's OpenGL path does not expose. The
+tube bypasses the upscaler (the lines pass is the scaler); chaining
+Reconstruct's dither decoding ahead of it is left for later. Pacing in
+fullscreen 16:9 with the tube on (`DKC2_PACING_LOG`, 1260 display-locked
+frames from the bramble state) showed every frame for exactly one refresh;
+the present call's mean rose from 1.5 ms to 2.8 ms, the five passes over a
+3456x1940 viewport, well inside the 16.7 ms frame.
+
+## 2026-09-04 - Logical pause-menu placement and dragging
+
+The SDL renderer passed the OpenGL drawable size to the pause overlay. On a
+Retina Mac that size is in physical pixels, while ImGui's SDL backend reports
+mouse positions and `DisplaySize` in logical window points. The pause window
+was therefore centered outside the visible logical area and was clipped at
+the screen edge. `Dkc2DesktopOverlayRenderOpenGl` now uses
+`ImGuiIO::DisplaySize` for the dimming rectangle and the host-neutral window
+layout calculation. The layout retains the existing 720 by 520 maximum and
+16-point compact-window inset, with a one-pixel minimum covered by synthetic
+tests.
+
+The initial center uses `ImGuiCond_Once` instead of being forced every frame,
+and the window no longer carries `ImGuiWindowFlags_NoMove`. This matches the
+DKC3 behavior: the menu starts centered in logical coordinates and can then be
+repositioned by its title bar without snapping back. The complete macOS suite
+passed all 55 tests both before and after the change, the native app was rebuilt
+and ad-hoc signed, and the owner confirmed the live menu behavior on the Retina
+window.
+
+
+## 2026-09-05 - Optional Donkey and Kiddy character slots
+
+The requested Project Kongs integration adds independent Donkey/Kiddy choices
+for the Diddy and Dixie slots in Pause > Characters. Default remains Original.
+The local importer produces an external pack; the host renders its decoded
+sprites inside native OBJ composition. Original DKC2 abilities are retained,
+including the Dixie slot's helicopter spin. The repository and app bundle
+contain no imported graphics. Contributor and author-reported MIT provenance
+is recorded under `third_party/project_kongs/`.
+
+The existing CRT/menu working-tree changes were preserved. Baseline validation
+passed all 55 configured CTest cases. The importer and runtime add synthetic
+coverage for split DMA tile layouts, visual calls/loops/carry commands, binary
+bounds and transactionality, OAM identity, taller replacement bounds, temporary
+palette restoration, and disabled no-op behavior.
+
+The first moving-state audit exposed current WRAM being ahead of OAM. Complete
+committed-layout matching replaced the initial current-pose assumption. A
+36-state, 120-frame-per-state comparison then completed with zero unmatched
+visible layouts and identical WRAM/VRAM/CGRAM/OAM/audio fingerprints between
+original and Donkey/Kiddy runs. Native-rendered contact sheets were inspected
+for ship deck, water, rope, hook, bramble and boss scenes. Full-game completion
+and every special animation are not established by those state checks.
+
+
+The moving audit added walking, jumping, rolling, direction changes, team
+swapping, climbing and swimming input for 700 frames from every preserved
+state. It exposed clipped compound layouts and a one-frame 97-pixel follower
+reattachment; matching all submitted pieces of a known layout fixed those
+cases without guessing sprite ownership. Loading the user's current live
+save additionally exposed the separate animal rider at `$006C`, which now
+uses the chosen Kong while retaining the original animal sprite and behavior.
+The final 37-state 16:9 replay passed with zero unmatched visible layouts and
+zero changed WRAM/VRAM/CGRAM/OAM/audio fingerprints. This is 25,900 frames per
+configuration, compared against the same input with original characters.
+
+The native Characters tab was exercised through keyboard navigation: the
+646-frame pack was detected, Donkey + Kiddy changed both slot selectors, and
+Original pair restored Diddy/Dixie. The selected pair was then restored to
+Donkey + Kiddy and persisted across closing the app. The actual shared PPU
+submodule remains clean; CMake's build-local adapter has unique-anchor drift
+checks. Source/game-data separation and contributor provenance are documented
+in `docs/PROJECT_KONGS.md` and `third_party/project_kongs/`.
+
+Final validation: all 57 configured CTest cases passed (55 baseline plus the
+two character suites), the canonical macOS app rebuilt with `MACOS_BUILD_OK`,
+and deep/strict ad-hoc signature verification passed. The reversed Kiddy/Donkey
+pair also passed the 37-state, 700-frame input audit at native 4:3 with zero
+machine differences or unmatched visible layouts. Full-game completion,
+original Donkey/Kiddy mechanics and exhaustive rare-pose coverage remain
+unverified/outside the implemented presentation feature.
+
+The final signed canonical app was relaunched and the user's existing Quick
+Load state was loaded through the native Game menu. Live rendering showed
+Kiddy riding Squitter with the replacement retained. Donkey/Kiddy choices
+survived restart; the app was left paused on Characters with that pair selected.
+
+## 2026-09-05 - Correct mounted Donkey/Kiddy presentation
+
+The owner reported incorrect animal-rider animation. Reproduction in the live
+Squitter save showed Kiddy looping the crouched mount frames. The first adapter
+also reused the original Kong's attachment and omitted the animal-driven
+compound frame selection. The prior state hashes and OAM-ownership checks did
+not establish visual correctness.
+
+Pack version 2 imports five per-character attachment points, dedicated mounted
+idle/movement sequences, and animal/rider pairs from commands `$85/$86`, including
+explicit offsets. Host rendering reads the live leader's animal animation and
+graphic to select jump/landing poses; holding an animal frame holds its rider
+pose. Attachment deltas preserve native bobbing and mirror with committed OAM
+facing. Host-only rider clocks reset on movement changes and frame-counter
+discontinuities and do not advance on repeated presentation of the same frame.
+Unmounted rendering and original game state remain unchanged.
+
+Kiddy's seated sequence replaces the Squitter crouch callback loop. His
+unlabelled movement tail is separated from idle, and the reference's borrowed
+Diddy/Rattly frame is adapted to Kiddy's seated art with a seven-pixel frame
+bottom correction. Version 1 packs remain loadable for unmounted characters;
+the menu asks for re-import to enable corrected riders. The installed private
+pack now contains 655 frames, 218 sequences and 172 compound pose records.
+
+Validation: all 57 configured CTest cases passed before and after this fix.
+Synthetic additions exercise signed attachments for both slots and all five
+mount types, mirroring, animation phase/reset/hold behavior, compound offsets,
+branch extraction, and truncated/malformed version 2 packs. Two 37-state,
+700-frame-per-state input audits (Donkey/Kiddy at 16:9 and the reversed pair at
+4:3) reported zero machine-state differences and zero unmatched visible
+layouts. Private contact sheets compared both replacements against original
+Squitter, Rambi and Squawks poses, including Rambi jumps/landings and facing
+changes. Rattly and Enguarde live gameplay remain unverified by this corpus.
+
+The canonical macOS bundle rebuilt with `MACOS_BUILD_OK` and passed deep/strict
+signature verification. It was quit and relaunched through its exact bundle
+path; the existing quick save was loaded through Game > Quick Load State.
+Live inspection verified seated Kiddy and Donkey on Squitter, selected through
+the actual Characters menu, which reported 655 loaded frames. The Donkey/Kiddy
+pair was restored and the rebuilt game left running. Changes remain uncommitted;
+all imported data and capture artifacts remain outside Git.
+
+## 2026-09-05 — Pause, ground attacks and barrel attachment follow-up
+
+The user clarified that the ground attacks are for Donkey and Kiddy, leaving
+original Diddy unchanged, and requested each character's original throw style.
+The supplied screenshot showed Donkey's hands raised above a barrel still
+positioned against his chest. Presentation-only substitution retained the
+original slot's carry offsets and callback timing; native Start pause also
+continued the host frame clock used for the replacement animation.
+
+Pack v3 adds private carry offsets and attack sequences (685 frames, 221
+sequences, 172 mounted records, 63 hand attachments). The animation clock now
+freezes on $08C2 bit $0040. Six ROM-verified simulation hooks connect hand
+positions and throw timing to the existing object lifecycle, and add Down + Y
+Donkey hand slap / Kiddy body slam. Kiddy uses his existing somersault and
+landing poses; downward enemy contact retains the defeat and suppresses the
+ordinary bounce so the slam continues to the ground.
+
+Initial integration testing exposed two issues before delivery: reference
+address comments differed from the supported ROM, and compiled direct calls
+bypassed pre-opcode hooks. Actual ROM signatures established the correct
+addresses. A checked adapter now routes four short optional callbacks through
+the existing paired interpreter interface; shared runtime files remain clean.
+A separate test caught the animation-cursor convention while shortening the
+Dixie-slot windup. No external assembly scripts were executed.
+
+The baseline complete CTest suite passed 57/57. Synthetic cases cover malformed
+v3 packs, signed attachments, freeze/resume, hand-slap impacts, body-slam
+landing and stomp continuation, damage/mount cancellation, both facings, and
+throw callback timing. A 37-state private no-input comparison passed with zero
+WRAM/VRAM/OAM/CGRAM/audio differences and zero unmatched visible layouts.
+Fresh-boot Pirate Panic replays exercise real pickup, overhead/underhand
+release, and enemy contact; private captures and logs are under
+`/tmp/dkc2-kongs/boot-route`. Final bundle verification is recorded below.
+
+The first packaged ground-attack/barrel build passed 57/57 CTest checks and
+`MACOS_BUILD_OK`. Before final delivery, the user reported inherited helicopter
+flight and missing tag gestures. Flight now exits after the shared run-speed
+update, with a separate recovery path for an already-gliding save/menu change.
+Pack v4 (707 frames / 225 sequences) supplies both handoff roles. The native
+paired commands leave the outgoing animation ID at idle; a shared clock now
+drives both replacement poses until the native 44/26-frame transfer.
+
+The user additionally supplied DKC1Recomp and DKC3Recomp as references. Their
+animation registry/character dispatch, plus the DKC3 disassembly's distinct
+glide constants, corroborate the separation of character behavior from slots.
+No further source or game assets were vendored. This is not a complete
+transplant: movement constants, ordinary collision sizes and DKC3 water-skip,
+team/floor-breaking mechanics remain explicit roadmap work.
+
+Focused synthetic checks pass for both handoff roles, both original slots,
+pause/resume, v4 truncation, original-character flight preservation and
+mid-glide recovery. A real Toxic Tower replay recorded 83 original Dixie
+glide frames versus zero for either replacement; both replacements landed
+normally. Two-way tags passed in both pair orders and facings with zero
+unmatched sprites. The 37-state preservation corpus also passed in both
+pair orders (74 comparisons, zero machine or visible-layout mismatches).
+
+Final v4 packaging emitted `MACOS_BUILD_OK`; all 57 CTest checks passed, and
+deep/strict bundle-signature verification passed. Relaunched the exact
+`build/macos/DKC2Recomp.app`, verified Pause > Characters reports 707 frames
+and the saved Donkey/Kiddy pair, and restored the user's quick-save into
+60 FPS gameplay with Kiddy riding Squitter. Source changes remain uncommitted;
+the pack, captures, recordings and executables remain private/untracked.
+
+
+### September 5: paired team pickup and throws
+
+The next user report concerned one replacement picking up and throwing the
+other. Deterministic Toxic Tower replays reproduced independent follower
+animation and attachment. The source's Donkey top idle still points to Diddy;
+its Kiddy bottom throw omits the original DKC3 paired contact operands.
+Pack v5 now imports 715 frames / 233 sequences, including four top-role states
+per replacement. DK adapts seated/tumbling art; Kiddy uses dedicated team art.
+The renderer anchors the top to the displayed carrier after validating each
+OAM owner. Two additional simulation callbacks prepare/release the native
+partner at phases 15/18, preserving the native collision/velocity path and
+setting the actual launch position to the matching hands. The callback seeker
+now understands ten-byte paired commands and consumes preparation once.
+
+Baseline CTest passed 57/57. Synthetic tests cover v5 truncation, top movement
+with unchanged follower animation ID, displayed-origin attachment, mirroring,
+pause/drop, both original slots and carrier choices, callback ordering and
+recovery. Eighteen private gameplay replays cover both choices/slots/facings,
+forward/upward throws and mid-throw Start pause: all completed, each released
+once at 15/18, and no visible layout was unmatched. Captures were inspected
+under /tmp/dkc2-kongs/team-matrix. Both 37-state no-input preservation runs
+passed (74 comparisons, zero machine or layout mismatches).
+
+Mixed original/replacement partner placement and DKC3 floor-breaking mechanics
+remain separate work. No assets, saves, captures or binaries were added to
+Git; the shared snesrecomp runtime was not modified. Final packaging and live
+app verification follow below.
+
+Final v5 packaging emitted `MACOS_BUILD_OK`; the complete suite passed 57/57
+and deep/strict codesign verification passed. Installed pack SHA-256:
+`9238d533b8be62c6afc9ef76cb58b48ab563f040279614481ea7df2faf2c943c`.
+The exact rebuilt bundle was launched, Characters showed 715 loaded frames
+with Donkey/Kiddy selected, gamepad input was restored, and the user's
+quick-save resumed at 60 FPS with Kiddy on Squitter. Live app checks establish
+pack/menu loading and save restoration; detailed team motion was verified
+from the deterministic gameplay render captures above. No commits were made.
+
+
+### September 5: Kiddy post-throw jitter correction
+
+The user reported visible twitching after Donkey threw Kiddy. Captured the
+current native snapshot and restored the previous quick-save file immediately.
+The exact state reproduces a stationary follower in state $21, semantic 40,
+with $D7A zero. The source borrows Diddy's team-stunned animation; the importer's
+hurt fallback alternated Kiddy upright/horizontal hit poses every six ticks.
+This survived the previous release/layout checks, which did not establish a
+correct sustained recovery pose.
+
+The importer now isolates Kiddy’s four grounded sit-up frames and holds the
+seated final frame. Death/cry callbacks and frames are excluded. Ordinary
+hurt mapping and native throw/rejoin physics are unchanged. Pack format and
+counts remain v5, 715 frames / 233 sequences; earlier packs need regeneration.
+The trace includes displayed origins to distinguish translation jitter from
+pose substitution. Synthetic tests cover the isolated sequence, held recovery,
+pause, long waits and native following resumption.
+
+The exact snapshot's 180-frame replay now progresses to one seated pose and
+holds it, with a constant displayed origin (90,128). A catch-up/jump replay
+exits semantic 40, resumes native follow animations, and matches the earlier
+pack's WRAM, VRAM, CGRAM, OAM, source OAM and audio fingerprints. Eighteen
+team-throw replay cases still each release exactly once with zero unmatched
+visible actors. Private evidence is under /tmp/dkc2-kongs/throw-jitter.
+Baseline full CTest passed 57/57; final packaging/live verification follows.
+
+Final macOS packaging emitted `MACOS_BUILD_OK`, all 57 CTest tests passed,
+and deep/strict bundle signature verification passed. Installed the regenerated
+private pack with SHA-256
+`5f5e8e0d452225ad3a7f730b429b8acb0ada19265e5f3e9d659f56bbcf9cb0b4`.
+The rebuilt app loaded the exact reported snapshot: screenshots several seconds
+apart show Kiddy holding the seated pose, and the live trace confirms semantic
+40 / pose $3EE0 at the stable origin (90,128). Then relaunched the bundle
+normally and restored the user's original quick-save on Squitter; both player
+input sources remain gamepad. No commits were made.
+
+## 2026-09-12 - Native macOS v0.0.6 fork release
+
+The work since v0.0.5 was packaged for the `elliotttate/DKC2Recomp` fork
+as the v0.0.6 release: the CRT television display, the logical pause-menu
+placement on Retina windows, and the optional Donkey Kong and Kiddy Kong
+character slots with their mounted, carry, throw, ground-attack, tag and
+recovery presentation. The three pieces of work had accumulated in one
+working tree and were split into separate commits before the release,
+each compiled and unit-tested on its own; the parent repository still pins
+the presentation runtime to `elliotttate/snesrecomp` at commit
+`3a929cd30336f2b3a077df17912719be63142299`. No Windows build was
+refreshed for this release; the `v0.0.5-r2` Windows archive remains the
+most recent one and predates these features.
+
+The release app is an arm64 macOS bundle, version 0.0.6, with bundled
+SDL2 and a strict deep-valid ad-hoc signature. Its executable SHA-256 is
+`068370009adcccec5feceeb7a904f97c3667527380202ef66d503055d2f5be53`.
+The ROM-free `DKC2Recomp-v0.0.6-macOS-arm64.zip` archive has SHA-256
+`20947ee9ee4bc64df13b2aeae68440288811f8e6b5b263bc8c4c8258352a6094`.
+Extraction into a clean temporary directory preserved both the version and
+the signature, the extracted executable was byte-identical to the packaged
+build, and it completed a hidden 180-frame run at 16:9 with the CRT
+display on. The configured macOS suite passed 57/57 immediately before
+packaging, including the CRT smoke run, the CRT model, the overlay layout,
+the Project Kongs importer, and the Project Kongs runtime checks. The
+archive contains no ROM, no character pack, and no configuration file.
 
 ## 2026-09-12 - Simultaneous two-player co-op
 

@@ -376,13 +376,38 @@ than duplicated platform behavior. The portable presenter requests an OpenGL
 deterministic swap boundary. Its visible context requests SDL swap interval
 one on Windows and reports the accepted state through the same diagnostic
 backend field; hidden automation disables the interval. Visible macOS instead
-uses interval zero by default because a 60/120 Hz blocking swap would be a
-second timing gate behind DKC2's 60.098811862 Hz clock. The Mac loop waits one
-absolute Mach deadline, performs a short final spin, presents after that wait,
-and re-anchors deadlines missed by more than 2 ms. The macOS compositor still
-receives one complete frame atomically. Swap policy affects only host
-presentation; emulation/audio state remains owned by the same exact-rate host
-loop.
+uses interval zero and paces on the display itself. The window's display link
+(`runner/macos_display_link.m`, macOS 14) delivers the display's refresh
+ticks on its own thread, asking the panel for 60 Hz so a ProMotion display
+ticks at 60 rather than 120; `runner/desktop_pacer.c` measures the tick
+interval and locks when one, two, three, or four ticks per frame keep the
+frame rate within 2% of the cartridge's 60.098811862 Hz, so a 60-Hz display
+shows every frame once and a 120-Hz display twice. Once locked, each frame
+waits for the tick that is `ticks_per_frame` after the one the previous
+frame followed and presents right after it, which lands every frame on the
+same phase of the refresh about 13 ms ahead of it. A frame that misses its
+tick presents on the next one without catching up, ticks that stop for 50 ms
+release the lock, and a display whose rate cannot be locked (50, 75, 90, or
+144 Hz) or a system without display links falls back to the earlier host
+clock: one absolute Mach deadline at 60.098811862 Hz, a short final spin,
+presentation after the wait, and re-anchoring after a miss of more than 2 ms.
+`DKC2_DISPLAY_LOCK=0` keeps that clock deliberately.
+
+Locking the frame cadence to the display makes the game run at the
+display's rate, 0.16% slow on a 60-Hz panel, so the audio is kept in step
+by dynamic rate control (`runner/desktop_audio_rate.c`) rather than by the
+frame clock: every frame's samples pass through a linear resampler whose
+ratio, within half a percent of unity, follows an exponential average of the
+queue fill against a target of half a device pull plus two frames. The same
+control runs under the host clock, where it also absorbs the audio device's
+clock drifting from the host's. The queue is primed unpaced to the target
+after start, a state load, or a speed change, and only a queue that has
+drained below one frame after a host stall runs unpaced again. Swap policy
+affects only host presentation; emulation state remains owned by the same
+single-threaded host loop. `DKC2_PACING_LOG=<file>` records one line per
+presented frame, with the display tick it followed and the time in each
+loop stage, and `scripts/analyze_pacing_log.py` estimates from it how many
+refreshes each frame was shown for.
 
 The in-game overlay is a second, gameplay-lifetime recomp-ui/ImGui context;
 the pre-boot launcher still owns and destroys its separate window/context.
@@ -391,7 +416,11 @@ wrapped 0–4 slot selector, one-shot Resume/Quit/Save/Load actions, and the
 validated lifecycle of one active keyboard/controller binding capture.
 Platform glue supplies SDL events or a small Win32 input translation, and the
 presenter submits ImGui draw data after the game quad but before the same
-buffer swap. While open, the hosts schedule no SNES frame, zero game input,
+buffer swap. Overlay geometry comes from `ImGuiIO::DisplaySize`, not the
+presenter's physical drawable dimensions, so a Retina/high-DPI window centers
+the menu in logical coordinates. The initial placement is centered once and
+the title bar remains movable for the rest of the gameplay context. While
+open, the hosts schedule no SNES frame, zero game input,
 clear/pause queued audio, and continue presenting at the host rate. File-state
 actions reuse SNESrecomp's `RtlSaveSlotPath`,
 `RtlSaveSnapshot`/`RtlLoadSnapshot`, and `save_name_prefix`; the bounded
@@ -948,7 +977,61 @@ apply. When the shader cannot be built the presenter reports why and falls
 back to the sampler implied by the texture filter. `DKC2_DESKTOP_SCREENSHOT`
 reads the drawable back from a hidden run, and `DKC2_DESKTOP_TEST_LOADSTATE`
 starts that run from a preserved state, which is how the experiment is
-captured for comparison without a visible window.
+captured for comparison without a visible window. The state path must be
+absolute, since the Mac app changes into its user directory at start.
+`DKC2_PACING_LOG` and `DKC2_DISPLAY_LOCK` are the visible host's pacing
+switches, described with the presenter above.
+
+### CRT television display
+
+The presenter's second display mode draws the finished frame as a tube
+would show it. `runner/desktop_crt.c` is the model with no OpenGL in it:
+the persisted settings (a preset and six percentage sliders), the presets,
+and `Dkc2CrtDerive`, which turns them and the viewport into one frame's
+shader parameters. `desktop_present_sdl.c` runs five GLSL 1.20 programs
+over half-float `EXT_framebuffer_object` targets sized to the viewport, in
+linear light:
+
+- Lines: each source row decoded from sRGB and resampled to the viewport
+  width with a Gaussian in source pixels (the video bandwidth; sharpness
+  sets its width from 0.60 to 0.25 pixels), one target row per line.
+- Beam: every output pixel sums the Gaussian beams of the nearby lines,
+  each as wide as that line's brightness per channel, from `sigma_dark`
+  (the scanlines slider, 0.50 to 0.18 line pitches) to 0.50 for white.
+  The kernels are normalised, so the mean over a line pitch equals the
+  source brightness for any width and no light is lost; a white field
+  ripples by about five percent (its lines vanish) while a dim one shows
+  its lines clearly, which is the behaviour of a real beam rather than of
+  a fixed line pattern, and the analytic evaluation at every pixel has no
+  grid to beat against the panel's fractional 8.7 to 10 pixels per line.
+- Glow and halation: a 4x4 box reduction of the beam image blurred both
+  ways, and a further reduction of that blurred again; the compose pass
+  adds them and reduces the direct light by the same fractions.
+- Compose: the beam image through cylindrical curvature (up to three
+  percent, horizontal more than vertical) with rounded corners and a faint
+  vignette, the phosphor mask in window pixels (an aperture grille of
+  three or six pixels per triad, or a staggered slot mask) with the inverse
+  of its mean transmission as gain and a soft knee above 0.9 in place of
+  clipping, then sRGB encoding and a triangular dither of half a code
+  value so the beam's gradients do not band.
+
+Below three to five output pixels per line the beam fades to the flat
+image, and below five to seven per column the mask fades out; both come
+from the viewport, so a 1x or 2x window is simply a soft flat image. The
+mask is the honest SDR compromise: at the default strength of 0.3 a white
+field loses a few percent to the knee, and stronger masks dim, since the
+panel has no headroom to pay for them. `Dkc2SdlPresenterSetDisplay`
+selects the mode; when the programs or targets cannot be built it stays
+flat and reports why in `crt_error`. The window and the hidden capture
+share one `RenderFrame`, so `DKC2_DESKTOP_SCREENSHOT` records the whole
+chain, and `DKC2_DESKTOP_TEST_WINDOW=WxH` sizes a hidden window in points
+so a capture can be taken at the panel's full drawable.
+`scripts/crt_capture_compare.py` judges a flat and a CRT capture of the
+same state: the mean linear luminance within three percent, the strongest
+short period in the row profile equal to the line pitch, and no periodic
+residual between the smoothed profiles beyond the scene-following trend.
+The pause menu's upscaler combo is disabled while the tube is on, since
+the lines pass is the scaler; the phosphor-color model still runs first.
 
 ### Dispatch tables with null slots
 
@@ -1453,6 +1536,114 @@ external, append-only kit and preserves the SRAM that existed at recording
 start beside each route. That paired SRAM is supplied to deterministic replay,
 preventing later personal progress from changing a diagnostic run. ROMs,
 saves, recordings, memory dumps, and captures remain outside Git.
+
+
+## Optional playable Kong presentation
+
+`runner/dkc2_kongs.c` loads a bounded, versioned private sprite pack. The
+project-owned importer reads Project Kongs graphics and animation declarations
+as data, decodes the compound 4-bpp frames and projects visual animation loops;
+it never executes assembly commands or imports the ROM hack's gameplay code.
+Each original Diddy/Dixie slot has an independently persisted replacement.
+Original abilities, hitboxes, game state, animal transformations and audio stay
+under the original game program's ownership.
+
+DKC2 actor types `$00E4`/`$00E8`, graphics at actor offset `$18`, properties at
+`$12`, and animation IDs at `$36` identify the two playable sprites. Dixie's
+animation IDs have a `$00A3` offset. Actor WRAM can advance ahead of committed
+OAM; the adapter therefore verifies every submitted piece of the displayed compound layout
+against the ROM graphics directory at `$BC:8000` and recovers its displayed
+origin. Palette and reserved tile allocation identify candidate OAM pieces;
+geometry, size and tile order must all match before any piece is replaced.
+Partly clipped sprites may submit only a subset of a known compound layout.
+An unrecognized layout remains the original sprite.
+While mounted, `$006C` identifies the separate Kong rider (types `$0190`
+through `$01A0`); its semantic animation identifies the original slot. The
+original player record then renders the animal and is left unchanged.
+Pack version 2 contains five attachment points per replacement character,
+separate mounted idle/movement sequences, and compound pose records keyed by
+the leader's semantic animal animation and graphic. The adapter subtracts the
+original attachment (`$0D72/$0D74`) from the imported attachment, preserving
+the existing bobbing. Explicit compound offsets instead replace the current
+total (`$0D76/$0D78`). Adjustments are mirrored with the displayed OAM facing.
+Rider movement follows the source callback's leader `$26` predicate for
+Squitter/Rambi; Enguarde stays seated and the other mounts have dedicated poses.
+Kiddy's Squitter rider uses his seated sequence instead of the source's crouch
+mount callback loop; his Rattly pose uses seated art with a frame-origin adaptation.
+
+`cmake/ProjectKongsPpu.cmake` inserts guarded OAM visibility and raster callbacks
+into a build-local copy of the pinned shared PPU. Exact unique anchors fail at
+configure time if the upstream integration drifts. The submodule stays clean.
+The replacement occupies the original object's OAM priority position, before
+background/window composition and main/subscreen color math. Its frame bounds
+control visibility so taller replacement sprites are not clipped to the
+original sprite's first tile. A temporary per-scanline palette is restored
+before HDMA; WRAM, VRAM, OAM and the final CGRAM are unchanged. Unmounted visual
+sequence phase follows the serialized SNES frame counter. Mounted sequences
+have host-only elapsed clocks that restart on mount/movement changes or frame
+counter discontinuities. Repeated presentation of one guest frame does not
+advance them. Compound poses follow the current animal graphic and hold their
+last matching pose while the animal holds that frame. Restore/rewind can restart
+the cosmetic cycle and adds no guest state.
+
+The pause menu owns character selection and pack loading. `kongs.cfg` contains
+the selected pair and external pack path in the platform user-data directory.
+The default is the original pair, and missing/malformed packs cannot replace
+sprites. Invalid replacement loads preserve the previous valid pack. Tests
+cover the binary boundary, sprite identification, visibility, palette restore,
+and disabled behavior; private state/input comparisons cover real gameplay.
+
+## Optional Kong gameplay adapters (September 5 follow-up)
+
+Pack v3 extends the bounded private sprite format with hand-attachment records
+and attack sequences. v1/v2 remain readable. A pause-aware simulation clock
+feeds per-actor animation clocks; repeated presentation never advances them.
+`Dkc2KongsGameplay` runs only at nine verified US v1.0 instruction boundaries.
+It retimes native throw callbacks, updates carried-object hand coordinates and
+adds Donkey's hand slap / Kiddy's body slam using legal native actor states,
+original terrain physics, enemy clipping, defeat flags and the audio queue.
+The renderer still does not mutate WRAM, OAM or VRAM.
+
+Seven generated callbacks can be called directly from compiled code. The
+checked, idempotent `apply_dkc2_kongs_overrides.py` adapter routes these short
+RTS routines through the existing paired interpreter ABI only when the active
+leader is a selected replacement. The shared runtime stays pristine. CMake
+applies the adapter on configuration and rejects missing/changed entry anchors.
+Other code remains on the existing compiled path. Original-pair behavior is
+unchanged; carry and ground-attack WRAM/audio differences are intentional.
+
+Host attack state is canceled on restore instead of changing the save format.
+Kiddy's solo slam is a local DKC2 adaptation, not DKC3 floor-breaking physics.
+Donkey's bonus-banana spawning from the reference hack is not implemented.
+
+Pack v4 adds incoming/outgoing tag sequences. A shared presentation clock
+follows the incoming actor's semantic 73 and also animates its partner, whose
+animation ID can remain idle while native paired-frame commands control it.
+The native 44/26-frame release points and outgoing hop stay authoritative.
+The fifth callback is `glide_action`: the replacement path preserves its
+shared run-speed update, then returns before Dixie's flight logic. Restoring
+an existing glide resets the actor's native gravity and terminal speed before
+resuming its falling animation. This remains a partial mechanics adaptation;
+ordinary movement constants and collision geometry still belong to DKC2.
+
+Pack v5 adds top idle/walk/air/windup sequences 178-181 and replaces DK's
+borrowed top idle with seated DK art. A shared team phase follows carrier
+semantics 29-38 while $D7A names the partner. After matching both native OAM
+owners, the renderer places the top relative to the displayed carrier origin;
+it does not write guest state. Simulation hooks B9:DCEA and B9:D8BE separately
+prepare/release the top at DK/Kiddy phases 15/18 and set its actual launch
+origin. The existing B9:DFD5 callback retains each full recovery sequence.
+The bounded callback seeker handles native paired $8A frames as well as $8B
+carry frames; preparation is consumed once so it cannot prevent release.
+Reset, damage, dropping, mounting and changed selections abandon host action
+state. Mixed original/replacement teams retain native partner placement.
+
+Kiddy's semantic 40 is a dedicated grounded sit-up ending in a held seated
+frame. It is not the generic six-tick hurt loop used by semantic 41. The
+importer isolates four sit-up frames from the supplied sequence, excluding
+its surrounding death/cry actions. This is a pack-data correction within v5;
+the native post-throw waiting state and rejoin logic are unchanged. Diagnostic
+Kong traces now include the recovered displayed origin for jitter checks.
 
 ## Simultaneous animal ownership and death handoff
 

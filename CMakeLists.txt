@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.20)
 
 project(dkc2_port
-    VERSION 0.0.5
+    VERSION 0.0.6
     DESCRIPTION "Native PC recompilation of Donkey Kong Country 2"
     LANGUAGES C)
 
@@ -337,12 +337,15 @@ if(DKC2_BUILD_SNESRECOMP)
         runner/desktop_vsync.c
         runner/desktop_rewind.c
         runner/desktop_viewport.c
+        runner/desktop_pacer.c
+        runner/desktop_audio_rate.c
         runner/sdl_main.c
         ${SNESRECOMP_ROOT}/runner/src/host_report.c)
     if(APPLE)
         enable_language(OBJC)
         target_sources(dkc2_snesrecomp_sdl PRIVATE
             runner/macos_host.m
+            runner/macos_display_link.m
             assets/macos/DKC2Recomp.icns)
         set_source_files_properties(assets/macos/DKC2Recomp.icns PROPERTIES
             MACOSX_PACKAGE_LOCATION "Resources")
@@ -370,7 +373,8 @@ if(DKC2_BUILD_SNESRECOMP)
         SDL2::SDL2)
     if(APPLE)
         target_link_libraries(dkc2_snesrecomp_sdl PRIVATE
-            "-framework AppKit")
+            "-framework AppKit"
+            "-framework QuartzCore")
     endif()
     if(UNIX AND NOT APPLE)
         target_link_libraries(dkc2_snesrecomp_sdl PRIVATE m)
@@ -801,6 +805,11 @@ if(BUILD_TESTING)
                 ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_check_widescreen_state_corpus.py)
         set_tests_properties(dkc2_widescreen_state_corpus_tool PROPERTIES
             LABELS "unit;tooling;widescreen;diagnostics;portable")
+        add_test(NAME dkc2_pacing_log_tool
+            COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_analyze_pacing_log.py)
+        set_tests_properties(dkc2_pacing_log_tool PROPERTIES
+            LABELS "unit;tooling;desktop;performance;portable")
 
         # Private save-state corpus: every preserved Quick Save under
         # DKC2_STATE_CORPUS is replayed at 4:3, 16:9, and 16:10 and checked
@@ -1029,6 +1038,26 @@ if(BUILD_TESTING)
     add_test(NAME desktop_fps COMMAND test_desktop_fps)
     set_tests_properties(desktop_fps PROPERTIES
         LABELS "unit;desktop;video;performance")
+
+    add_executable(test_desktop_pacer
+        tests/test_desktop_pacer.c
+        runner/desktop_pacer.c)
+    target_include_directories(test_desktop_pacer PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/runner)
+    dkc2_enable_project_warnings(test_desktop_pacer)
+    add_test(NAME desktop_pacer COMMAND test_desktop_pacer)
+    set_tests_properties(desktop_pacer PROPERTIES
+        LABELS "unit;desktop;video;performance")
+
+    add_executable(test_desktop_audio_rate
+        tests/test_desktop_audio_rate.c
+        runner/desktop_audio_rate.c)
+    target_include_directories(test_desktop_audio_rate PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/runner)
+    dkc2_enable_project_warnings(test_desktop_audio_rate)
+    add_test(NAME desktop_audio_rate COMMAND test_desktop_audio_rate)
+    set_tests_properties(desktop_audio_rate PROPERTIES
+        LABELS "unit;desktop;audio;performance")
 
     add_executable(test_desktop_perf
         tests/test_desktop_perf.c

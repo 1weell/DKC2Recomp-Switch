@@ -1,6 +1,101 @@
 # Changelog
 
-## Unreleased
+## 0.0.6 - 2026-09-12
+
+- Fixed Kiddy rapidly alternating upright/horizontal hurt poses after a team
+  throw. His recovery now sits up once and holds until native following
+  resumes. Regenerate older packs, including the first v5 import.
+- Fixed Donkey/Kiddy team pickup, carry and throw presentation. Paired poses
+  follow the carrier during movement/jumps, and native throws release from
+  the matching hand position. Private pack v5 adds missing top poses.
+- Removed inherited Dixie helicopter flight from Donkey and Kiddy, including
+  an already-gliding save/menu change. Added paired tag gestures on Select
+  swaps in both slots and directions. Private pack version 4 supplies tag poses.
+- Fixed replacement Kong animations continuing during SNES Start pause.
+  Donkey and Kiddy now have Down + Y ground attacks, with native enemy
+  responses and impact audio. Kiddy continues his slam after stomping an enemy.
+- Corrected barrel attachment, windup, release origin and timing: Donkey
+  throws overhead and Kiddy underhand. Pack version 3 supplies hand offsets
+  and attack poses; older packs remain readable and prompt for re-import.
+
+- Corrected Donkey/Kiddy animal-rider poses and attachment points. Riders now
+  use separate idle/moving cycles and follow the animal's jump/landing frames;
+  Kiddy no longer loops a crouch on Squitter. Re-import legacy character packs
+  for the mounted-animation data in pack version 2.
+
+- Added optional Donkey Kong and Kiddy Kong replacements for either playable
+  slot in Pause > Characters, remembered between runs. A private Project Kongs
+  importer supplies the animation and sprite data. The native OBJ renderer
+  preserves foreground priority, water color math, widescreen placement and
+  original DKC2 gameplay; original movement, collision, abilities and audio
+  remain authoritative. No game data is included in the source or bundle.
+
+- Fixed the in-game ImGui pause window being offset on Retina/high-DPI
+  displays by sizing and centering it from ImGui's logical display dimensions.
+  It is centered only on first appearance and can now be moved by dragging its
+  title bar without snapping back each frame.
+- The Mac app has an optional CRT television display (pause menu >
+  Settings > Display). Each source line is drawn as an electron-beam
+  profile whose width follows its brightness, normalised so the picture
+  keeps its light; a fine aperture-grille mask, glow and halation, a gently
+  curved tube face, and a dither complete it. Three presets (Living room,
+  Studio monitor, Soft) and six sliders; the tube fades to the flat image
+  in small windows. `DKC2_DISPLAY=crt` and the `DKC2_CRT_*` variables
+  select it for a run, `DKC2_DESKTOP_TEST_WINDOW=WxH` sizes a hidden
+  capture, and `scripts/crt_capture_compare.py` checks a flat and a CRT
+  capture for conserved brightness, the right line pitch, and no beating.
+  The "Screen model" combo is now labelled "Phosphor colors"; its values
+  and config key are unchanged.
+
+## 0.0.5 Refresh 2 - 2026-09-03
+
+The normal `v0.0.5-r2` release pairs the Mac archive rebuilt from commit
+`63ed6e4` with a refreshed Windows SDL2/OpenGL build containing the same runtime
+changes. Both builds retain the embedded 0.0.5 application version.
+
+- The Mac app paces frames on the display's own refresh instead of a
+  free-running clock. The window's display link (macOS 14) delivers refresh
+  ticks at a requested 60 Hz, so a ProMotion panel ticks at 60 rather than
+  120; a pacer locks when one to four ticks per frame keep the frame rate
+  within 2% of 60.0988 Hz and each frame then presents right after its tick,
+  on the same refresh phase every time. Measured on a ProMotion MacBook Pro
+  during scrolling gameplay, the earlier Mach clock dropped or doubled a
+  frame about twice a second and its swaps occasionally blocked for over
+  30 ms; the display lock shows every frame for exactly one refresh. Rates
+  that cannot be locked, stalled ticks, or older systems fall back to the
+  Mach clock, which `DKC2_DISPLAY_LOCK=0` also selects.
+- Audio keeps step with the display through dynamic rate control: each
+  frame's samples are resampled within half a percent of unity from the
+  queue's average fill, so a display-locked run neither drains nor grows the
+  queue, and the audio device's own clock drift no longer forces an unpaced
+  catch-up frame. The device buffer is 1024 frames (32 ms) instead of 2048,
+  with the queue primed to two frames above half a pull.
+- `DKC2_PACING_LOG=<file>` records each presented frame's pacing mode, the
+  display tick it followed, the time in each loop stage, the audio fill and
+  the stretch ratio; `scripts/analyze_pacing_log.py` summarises a log and
+  estimates how many refreshes each frame was shown for.
+- Added `scripts/dkc2_unlock_levels.py`, which marks every real level of
+  a DKC2 save file as cleared: the 680-byte files at SRAM offsets 8, 688,
+  and 1368 carry a 16-bit sum and exclusive-or of their words from offset
+  6 to 672 and a `$52` signature, and the cleared-level flags are sixteen
+  words at data offset `$8D`, one bit per level number, as the
+  cartridge's `set_current_level_as_cleared` at `$BB:8158` writes them.
+  The real level numbers come from the pointer table at `$FD:0000`. The
+  tool backs the save up beside itself, can repair a file whose signature
+  is intact but whose sums disagree (`--repair`), and can set the same
+  flags in a quick save's in-memory copy (`--snapshot`) so restoring it
+  does not write the old flags back.
+- The unlock tool can open the Lost World and grant coins. `--lost-world`
+  sets the kiosk-paid mask the cartridge's Klubba screen tests at
+  `$B4:91F4` (bit `1 << world` of WRAM `$08FA`, data byte `$DC` of the
+  save record) and the count of beaten Lost World levels the Lost World
+  map compares with five before opening Krocodile Kore (WRAM `$08F9`,
+  data byte `$DB`); `--kremkoins` sets the Kremkoin count at data byte 5
+  (WRAM `$08CC`), which is what the kiosks charge. Banana Coins (WRAM
+  `$08CA`) are not stored in the save record, the map loader at
+  `$B4:800E` zeroes them before it reads a file, so `--banana-coins`
+  changes only the quick save named by `--snapshot`. Backups are never
+  overwritten; a second run numbers its backup.
 
 - Added CRT television on Windows OpenGL and SDL with three presets plus
   Custom, six tuning sliders and four masks. Both hosts share one pipeline.

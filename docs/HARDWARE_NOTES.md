@@ -210,7 +210,10 @@ and do not require Assist Tools. The overlay's five-slot selector and snapshot
 files are host state and never appear on the SNES bus. Opening the overlay also replaces
 the packed controller word with
 zero, pauses host audio, and stops scheduling console frames; none of those
-menu inputs enter an SNES controller register. Rumble, DirectInput, and native PlayStation
+menu inputs enter an SNES controller register. The SDL/OpenGL overlay uses
+ImGui's logical display size rather than the backing drawable pixel size, so
+Retina scaling affects neither its center nor its drag coordinates. Rumble,
+DirectInput, and native PlayStation
 APIs are not exposed by the desktop host yet.
 
 The accepted desktop executable is a Windows GUI host. A no-argument launch selects an
@@ -249,11 +252,19 @@ Visible Windows OpenGL hosts request a one-buffer swap interval and publish the
 accepted VSync state in the diagnostic presentation-backend string. This is a
 host/display synchronization request, not SNES timing. Hidden automation uses
 interval zero; GDI remains compositor-managed. Visible macOS deliberately uses
-interval zero as well: its host waits the 60.098811862 Hz absolute Mach
-deadline before submitting the complete frame, with a short final spin and
-stall re-anchor. This prevents a blocking 60/120 Hz OpenGL swap from becoming a
-second cadence authority. `DKC2_KEEP_OPENGL_VSYNC=1` retains the old path as a
-diagnostic comparison; it is not the default.
+interval zero as well, and paces on the window's display link: the display's
+own refresh ticks, requested at 60 Hz so a ProMotion panel does not tick at
+120, decide when each complete frame is submitted, and dynamic audio rate
+control absorbs the 0.16% between a 60-Hz display and the cartridge's
+60.098811862 Hz. Measured on the 16-inch MacBook Pro's ProMotion display
+during scrolling gameplay, the earlier free-running Mach clock dropped or
+doubled a frame about twice a second as its phase wandered across the
+refresh, and its swaps occasionally blocked for over 30 ms when the 60.0988-Hz
+stream ran ahead of the 60-Hz compositor; the display lock showed every one
+of 1,259 frames for exactly one refresh, presented 13.5 ms ahead of it with
+a 1.4 ms spread. `DKC2_DISPLAY_LOCK=0` keeps the Mach clock, and
+`DKC2_KEEP_OPENGL_VSYNC=1` retains the blocking swap as a diagnostic
+comparison; neither is the default.
 
 ## Current long-run boundary
 
@@ -1097,6 +1108,98 @@ therefore substituted 1,120 verified-blank margin samples apiece despite the
 correct source tiles being decoded. Shadow Y now unwraps the common tile
 origin (`ppuY & $03F8`) and restores `ppuY & 7` afterward. Exact replay removes
 all three large blank bursts.
+
+## The save record, Klubba's toll, and the Lost World
+
+`update_save_buffer` at `$BB:C5E0` packs a 680-byte file: data byte 5
+is the Kremkoin count (WRAM `$08CC`), bytes 6 and 7 the DK coin and
+life counts, byte `$AD` the world number (1-based; the Lost World
+variants a kiosk leads to are 10 to 14), byte `$AF` the map node, and
+bytes `$B4..$E3` a mirror of WRAM `$08D2..$0901`, which holds the shop
+and kiosk state. Banana Coins (`$08CA`) are not in the record: the map
+loader at `$B4:800E` zeroes the three counters and fills back only the
+two that were stored, so a loaded file always begins with none.
+
+Klubba's kiosk is NPC 8 (`$0689`). `get_player_coin_count_npc` at
+`$B4:A1C6` returns Kremkoins for him and Banana Coins for the other
+shopkeepers, and the purchase path at `$B4:9C66` subtracts the price of
+15. Paying records nothing in the per-shop bytes; the kiosk screen at
+`$B4:91F4` tests bit `1 << world` of `$08FA` (record byte `$DC`), which
+the transition at `$B4:9F53` sets when the Kongs go through, and offers
+free passage when it is set. `$08F9` (record byte `$DB`) counts newly
+cleared levels numbered 196 to 200, incremented at `$B4:B26B`; the map
+init at `$B4:80CD` compares it with five, runs a one-off event, and sets
+`$08FC |= $0C`, which is the Krocodile Kore opening.
+
+
+## Optional Kong sprite presentation
+
+The character adapter changes host OBJ rasterization, not SNES DMA payloads.
+The original OAM can lag current actor WRAM by one update; matching only the
+current animation header causes intermittent replacement failures. Match the
+committed OAM layout and derive its origin before rendering. Temporary CGRAM
+replacement is restored before each HDMA step, preserving the guest palette.
+Replacement objects use native priority/window/color-math composition. Their
+host raster bypasses their original compound sprite's sliver count; this is
+an optional presentation policy, not a claim of SNES sprite-limit accuracy.
+
+Mounted presentation must distinguish the rider at `$006C` from the leader at
+`$0593`, whose original player object renders the animal. `$0D72/$0D74` are
+the native rider base offset; `$0D76/$0D78` include animation bobbing. External
+animation commands `$85/$86` pair animal and rider graphics; `$86` additionally
+sets offsets. The presentation adapter reads that data and the live animal
+graphic without executing the reference callbacks or modifying these fields.
+Matching OAM ownership alone does not prove that a replacement rider pose is
+correct; mounted motion and attachment need image-backed validation.
+
+## Replacement Kong pause, hands and ground attacks
+
+SNES Start pause sets WRAM $08C2 bit $0040 while console frames continue.
+Replacement animation clocks must exclude those frames; host-frame count alone
+is insufficient. Escape pause already stops simulation.
+
+The US v1.0 attachment adapter runs at B3:9FE7 before native carried-object
+positioning. Throw callbacks B9:D8AC/D967/DFD5 preserve the native stack and
+object lifecycle while using donor timing and hand offsets. B9:D9E0 adjusts
+forward velocity before native terrain correction. Actor dispatch B8:9616 and
+physics continuation B8:995F support ground attacks without inserting invalid
+actor states. Some reference-project address comments belong to a different
+layout and must not be used as ROM addresses without verification.
+
+The reference adds a clipping entry after the base ROM's final attack box;
+that entry is not readable from the unpatched ROM. The host expresses its
+geometry explicitly and reads enemy boxes from the actual ROM. Impacts use
+native defeat bit 8 and the existing bounded sound queue. Hardware comparison
+of the new host moves remains outside this milestone; these are enhancements.
+
+The verified US v1.0 glide action starts at B8:C921. Its initial JSR updates
+shared run speed; B8:C924 then starts flight-specific checks. Replacements
+redirect that boundary to the native RTS at B8:C92D. An existing glide is
+semantic 11/state 6, with control variables $16B2/$16D8 and gravity/terminal
+speed at +8/+10. Normal values are restored from the actor's ROM constants
+pointer $8E-$90. Animal and original-character paths are excluded.
+
+Native swap animations 73/236 call B9:E164/B9:E1E4 at 44/26 elapsed frames.
+Paired commands can change the outgoing graphic without changing that actor's
+animation ID, so independent idle clocks cannot represent a tag handoff.
+Replacement handoff art uses one pause-aware clock for both participants.
+
+Team throws use native animation 38/201. Their base ROM streams begin with
+ten-byte paired $8A commands, followed by eight-byte $8B carry commands.
+B9:DCEA selects the inactive Kong's thrown animation; B9:D8BE assigns native
+forward/upward velocity, enables collision and clears $D7A. They are separate
+from the barrel release at B9:D967. Their callback cursor points to the next
+opcode, and preparation must not be sought again once consumed. Host team
+presentation retimes only the replacement carrier, preserving native throw
+collision/terrain and excluding animal riders. No hardware parity is claimed
+for this optional enhancement.
+
+The reported Kiddy jitter snapshot had the follower in native state $21,
+animation $CB (Dixie-slot semantic 40), held pointer zero and constant world
+position. Native graphics $05B8/$05BC/$05C0 form a waiting cycle. Mapping
+that state to Kiddy hurt graphics $3F68/$3F7C instead produced a repeating
+six-tick upright/horizontal snap. The corrected private projection holds its
+seated frame; it does not change the machine's waiting or recovery behavior.
 
 
 ## Windows menu input isolation (2026-09-13)
