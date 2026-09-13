@@ -52,6 +52,9 @@ static int s_reconstruct_mode = 3;
 static int s_reconstruct_strength = 100;
 static int s_reconstruct_softness = 50;
 static int s_reconstruct_shading = 60;
+static int s_display = kDkc2DisplayFlat;
+static Dkc2CrtSettings s_crt = {kDkc2CrtPresetLivingRoom, 55, 80,
+                                kDkc2CrtMaskGrilleFine, 30, 40, 25, 50};
 
 int Dkc2LauncherUpscaler(void) { return s_upscaler; }
 void Dkc2LauncherSetUpscaler(int upscaler) {
@@ -72,6 +75,18 @@ void Dkc2LauncherSetReconstructSoftness(int percent) {
 int Dkc2LauncherReconstructShading(void) { return s_reconstruct_shading; }
 void Dkc2LauncherSetReconstructShading(int percent) {
   s_reconstruct_shading = ClampInt(percent, 0, 100);
+}
+
+int Dkc2LauncherDisplay(void) { return s_display; }
+void Dkc2LauncherSetDisplay(int display) {
+  s_display = display == kDkc2DisplayCrt ? kDkc2DisplayCrt
+                                         : kDkc2DisplayFlat;
+}
+const Dkc2CrtSettings *Dkc2LauncherCrt(void) { return &s_crt; }
+void Dkc2LauncherSetCrt(const Dkc2CrtSettings *crt) {
+  if (!crt) return;
+  s_crt = *crt;
+  Dkc2CrtSettingsClamp(&s_crt);
 }
 
 int Dkc2LauncherWidescreenEdge(void) {
@@ -179,6 +194,24 @@ void Dkc2LauncherSettingsLoad(RecompLauncherCSettings *settings) {
       Dkc2LauncherSetReconstructSoftness(value);
     else if (strcmp(key, "ReconstructShading") == 0)
       Dkc2LauncherSetReconstructShading(value);
+    else if (strcmp(key, "Display") == 0)
+      Dkc2LauncherSetDisplay(value);
+    else if (strcmp(key, "CrtPreset") == 0)
+      s_crt.preset = value;
+    else if (strcmp(key, "CrtScanlines") == 0)
+      s_crt.scanlines = value;
+    else if (strcmp(key, "CrtSharpness") == 0)
+      s_crt.sharpness = value;
+    else if (strcmp(key, "CrtMask") == 0)
+      s_crt.mask = value;
+    else if (strcmp(key, "CrtMaskStrength") == 0)
+      s_crt.mask_strength = value;
+    else if (strcmp(key, "CrtGlow") == 0)
+      s_crt.glow = value;
+    else if (strcmp(key, "CrtHalation") == 0)
+      s_crt.halation = value;
+    else if (strcmp(key, "CrtCurvature") == 0)
+      s_crt.curvature = value;
     else if (strcmp(key, "EnableAudio") == 0)
       settings->enable_audio = value != 0;
     else if (strcmp(key, "AudioFrequency") == 0)
@@ -223,6 +256,10 @@ void Dkc2LauncherSettingsLoad(RecompLauncherCSettings *settings) {
     }
   }
   (void)fclose(file);
+  /* A named preset is authoritative over the sliders saved beside it. */
+  Dkc2CrtSettingsClamp(&s_crt);
+  if (s_crt.preset != kDkc2CrtPresetCustom)
+    (void)Dkc2CrtSettingsApplyPreset(&s_crt, s_crt.preset);
   if (!saw_aspect_index && legacy_widescreen >= 0)
     settings->aspect_index = legacy_widescreen
         ? kDkc2VideoAspect16x9 : kDkc2VideoAspectNative;
@@ -245,6 +282,9 @@ bool Dkc2LauncherSettingsSave(const RecompLauncherCSettings *settings) {
                     "Upscaler=%d\nReconstructMode=%d\n"
                     "ReconstructStrength=%d\n"
                     "ReconstructSoftness=%d\nReconstructShading=%d\n"
+                    "Display=%d\nCrtPreset=%d\nCrtScanlines=%d\n"
+                    "CrtSharpness=%d\nCrtMask=%d\nCrtMaskStrength=%d\n"
+                    "CrtGlow=%d\nCrtHalation=%d\nCrtCurvature=%d\n"
                     "EnableAudio=%d\n"
                     "AudioFrequency=%d\n"
                     "Volume=%d\nPlayer1Source=%d\nPlayer2Source=%d\n"
@@ -265,6 +305,9 @@ bool Dkc2LauncherSettingsSave(const RecompLauncherCSettings *settings) {
                     s_widescreen_edge,
                     s_upscaler, s_reconstruct_mode, s_reconstruct_strength,
                     s_reconstruct_softness, s_reconstruct_shading,
+                    s_display, s_crt.preset, s_crt.scanlines,
+                    s_crt.sharpness, s_crt.mask, s_crt.mask_strength,
+                    s_crt.glow, s_crt.halation, s_crt.curvature,
                     settings->enable_audio != 0,
                     ClampInt(settings->audio_freq, 8000, 192000),
                     ClampInt(settings->volume, 0, 100),

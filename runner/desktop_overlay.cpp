@@ -583,6 +583,68 @@ static void DrawSettingsPage(Dkc2DesktopOverlay *overlay) {
     }
     ImGui::EndCombo();
   }
+  /* Display: the flat panel path or the CRT television simulation with its
+   * preset and tunables (desktop_crt.h). Remembered by the launcher like
+   * the Reconstruct settings; the SDL host applies it on the next frame. */
+  static const char *display_labels[kDkc2DisplayCount] = {
+      "Flat panel", "CRT television"};
+  int display = Dkc2LauncherDisplay() == kDkc2DisplayCrt ? 1 : 0;
+  if (ImGui::BeginCombo("Display", display_labels[display])) {
+    for (int i = 0; i < kDkc2DisplayCount; i++) {
+      if (ImGui::Selectable(display_labels[i], display == i) && display != i)
+        Dkc2LauncherSetDisplay(i);
+    }
+    ImGui::EndCombo();
+  }
+  const bool crt_display = Dkc2LauncherDisplay() == kDkc2DisplayCrt;
+  if (crt_display) {
+    Dkc2CrtSettings crt = *Dkc2LauncherCrt();
+    Dkc2CrtSettingsClamp(&crt);
+    bool changed = false;
+    static const char *preset_labels[kDkc2CrtPresetCount] = {
+        "Living room", "Studio monitor", "Soft", "Custom"};
+    if (ImGui::BeginCombo("Tube preset", preset_labels[crt.preset])) {
+      for (int i = 0; i < kDkc2CrtPresetCount; i++) {
+        if (ImGui::Selectable(preset_labels[i], crt.preset == i) &&
+            crt.preset != i) {
+          if (i == kDkc2CrtPresetCustom) crt.preset = i;
+          else (void)Dkc2CrtSettingsApplyPreset(&crt, i);
+          changed = true;
+        }
+      }
+      ImGui::EndCombo();
+    }
+    bool slid = false;
+    slid |= ImGui::SliderInt("Scanlines", &crt.scanlines, 0, 100, "%d%%");
+    slid |= ImGui::SliderInt("Sharpness", &crt.sharpness, 0, 100, "%d%%");
+    static const char *mask_labels[kDkc2CrtMaskCount] = {
+        "None", "Aperture grille, fine", "Aperture grille, coarse",
+        "Slot mask"};
+    if (ImGui::BeginCombo("Phosphor mask", mask_labels[crt.mask])) {
+      for (int i = 0; i < kDkc2CrtMaskCount; i++) {
+        if (ImGui::Selectable(mask_labels[i], crt.mask == i) &&
+            crt.mask != i) {
+          crt.mask = i;
+          slid = true;
+        }
+      }
+      ImGui::EndCombo();
+    }
+    slid |= ImGui::SliderInt("Mask strength", &crt.mask_strength, 0, 100,
+                             "%d%%");
+    slid |= ImGui::SliderInt("Glow", &crt.glow, 0, 100, "%d%%");
+    slid |= ImGui::SliderInt("Halation", &crt.halation, 0, 100, "%d%%");
+    slid |= ImGui::SliderInt("Curvature", &crt.curvature, 0, 100, "%d%%");
+    if (slid) {
+      crt.preset = kDkc2CrtPresetCustom;
+      changed = true;
+    }
+    if (changed) Dkc2LauncherSetCrt(&crt);
+    ImGui::TextDisabled(
+        "A beam whose lines fade in highlights, a fine phosphor mask, glow, "
+        "and a gently curved tube, with no brightness lost. Fades out in "
+        "small windows.");
+  }
   static const char *renderer_labels[] = {"GDI compatibility", "OpenGL"};
   settings.renderer = settings.renderer ? 1 : 0;
   if (ImGui::BeginCombo("Renderer", renderer_labels[settings.renderer])) {
@@ -601,6 +663,7 @@ static void DrawSettingsPage(Dkc2DesktopOverlay *overlay) {
       "Reconstruct (experimental)"};
   int upscaler = Dkc2LauncherUpscaler() == 2
                      ? 2 : (settings.texture_filter != 0 ? 1 : 0);
+  ImGui::BeginDisabled(crt_display);
   if (ImGui::BeginCombo("Upscaler", upscaler_labels[upscaler])) {
     for (int i = 0; i < 3; i++) {
       if (ImGui::Selectable(upscaler_labels[i], upscaler == i) &&
@@ -639,6 +702,9 @@ static void DrawSettingsPage(Dkc2DesktopOverlay *overlay) {
         "sharp at any scale. Softness widens every transition; smooth "
         "shading turns shading bands into gradients.");
   }
+  ImGui::EndDisabled();
+  if (crt_display)
+    ImGui::TextDisabled("Bypassed while the CRT television display is on.");
   static const char *aspect_labels[] = {
       "4:3 (Native)", "16:10 (Mac)", "16:9 (Widescreen)"};
   if (settings.aspect_index < kDkc2VideoAspectNative ||
@@ -680,7 +746,7 @@ static void DrawSettingsPage(Dkc2DesktopOverlay *overlay) {
       "Raw", "CRT", "Composite", "Trinitron"};
   if (settings.screen_kind < 0 || settings.screen_kind > 3)
     settings.screen_kind = 0;
-  if (ImGui::BeginCombo("Screen model",
+  if (ImGui::BeginCombo("Phosphor colors",
                         screen_labels[settings.screen_kind])) {
     for (int i = 0; i < 4; i++) {
       if (ImGui::Selectable(screen_labels[i], settings.screen_kind == i))

@@ -969,6 +969,57 @@ absolute, since the Mac app changes into its user directory at start.
 `DKC2_PACING_LOG` and `DKC2_DISPLAY_LOCK` are the visible host's pacing
 switches, described with the presenter above.
 
+### CRT television display
+
+The presenter's second display mode draws the finished frame as a tube
+would show it. `runner/desktop_crt.c` is the model with no OpenGL in it:
+the persisted settings (a preset and six percentage sliders), the presets,
+and `Dkc2CrtDerive`, which turns them and the viewport into one frame's
+shader parameters. `desktop_present_sdl.c` runs five GLSL 1.20 programs
+over half-float `EXT_framebuffer_object` targets sized to the viewport, in
+linear light:
+
+- Lines: each source row decoded from sRGB and resampled to the viewport
+  width with a Gaussian in source pixels (the video bandwidth; sharpness
+  sets its width from 0.60 to 0.25 pixels), one target row per line.
+- Beam: every output pixel sums the Gaussian beams of the nearby lines,
+  each as wide as that line's brightness per channel, from `sigma_dark`
+  (the scanlines slider, 0.50 to 0.18 line pitches) to 0.50 for white.
+  The kernels are normalised, so the mean over a line pitch equals the
+  source brightness for any width and no light is lost; a white field
+  ripples by about five percent (its lines vanish) while a dim one shows
+  its lines clearly, which is the behaviour of a real beam rather than of
+  a fixed line pattern, and the analytic evaluation at every pixel has no
+  grid to beat against the panel's fractional 8.7 to 10 pixels per line.
+- Glow and halation: a 4x4 box reduction of the beam image blurred both
+  ways, and a further reduction of that blurred again; the compose pass
+  adds them and reduces the direct light by the same fractions.
+- Compose: the beam image through cylindrical curvature (up to three
+  percent, horizontal more than vertical) with rounded corners and a faint
+  vignette, the phosphor mask in window pixels (an aperture grille of
+  three or six pixels per triad, or a staggered slot mask) with the inverse
+  of its mean transmission as gain and a soft knee above 0.9 in place of
+  clipping, then sRGB encoding and a triangular dither of half a code
+  value so the beam's gradients do not band.
+
+Below three to five output pixels per line the beam fades to the flat
+image, and below five to seven per column the mask fades out; both come
+from the viewport, so a 1x or 2x window is simply a soft flat image. The
+mask is the honest SDR compromise: at the default strength of 0.3 a white
+field loses a few percent to the knee, and stronger masks dim, since the
+panel has no headroom to pay for them. `Dkc2SdlPresenterSetDisplay`
+selects the mode; when the programs or targets cannot be built it stays
+flat and reports why in `crt_error`. The window and the hidden capture
+share one `RenderFrame`, so `DKC2_DESKTOP_SCREENSHOT` records the whole
+chain, and `DKC2_DESKTOP_TEST_WINDOW=WxH` sizes a hidden window in points
+so a capture can be taken at the panel's full drawable.
+`scripts/crt_capture_compare.py` judges a flat and a CRT capture of the
+same state: the mean linear luminance within three percent, the strongest
+short period in the row profile equal to the line pitch, and no periodic
+residual between the smoothed profiles beyond the scene-following trend.
+The pause menu's upscaler combo is disabled while the tube is on, since
+the lines pass is the scaler; the phosphor-color model still runs first.
+
 ### Dispatch tables with null slots
 
 The recompiler resolves a `JSR (abs,X)` into a static switch over the

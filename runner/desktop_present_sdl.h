@@ -5,6 +5,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "desktop_crt.h"
 #include "desktop_vsync.h"
 
 /* How the finished SNES frame is scaled to the drawable. Nearest and
@@ -16,6 +17,25 @@ enum {
   kDkc2UpscalerReconstruct = 2,
   kDkc2UpscalerCount = 3,
 };
+
+/* The CRT television display's render passes (desktop_crt.h describes the
+ * model). Each is a GLSL 1.20 program over the previous pass's target. */
+enum {
+  kDkc2CrtPassLines = 0,   /* sRGB decode + horizontal resample per line */
+  kDkc2CrtPassBeam = 1,    /* vertical beam profile */
+  kDkc2CrtPassDown = 2,    /* 4x4 box downsample */
+  kDkc2CrtPassBlur = 3,    /* separable Gaussian blur */
+  kDkc2CrtPassCompose = 4, /* geometry, glow, mask, knee, encode, dither */
+  kDkc2CrtPassCount = 5,
+};
+
+/* A half-float render target: a texture with its framebuffer object. */
+typedef struct Dkc2GlTarget {
+  unsigned int texture;
+  unsigned int fbo;
+  int width;
+  int height;
+} Dkc2GlTarget;
 
 typedef struct Dkc2SdlPresenter {
   void *window;
@@ -44,6 +64,18 @@ typedef struct Dkc2SdlPresenter {
   int uniform_softness;
   int uniform_shading;
   char shader_error[160];
+  /* CRT television display state. display is the mode in effect; when the
+   * programs or framebuffer objects are unavailable it stays Flat and
+   * crt_error says why. The targets are sized to the viewport and rebuilt
+   * when it changes. */
+  int display;
+  Dkc2CrtSettings crt;
+  unsigned int crt_program[kDkc2CrtPassCount];
+  Dkc2GlTarget crt_lines;
+  Dkc2GlTarget crt_beam;
+  Dkc2GlTarget crt_glow[2];
+  Dkc2GlTarget crt_halo[2];
+  char crt_error[160];
   /* Optional one-shot drawable capture: the next presented frame's drawable
    * is read back into this caller-owned RGB buffer (top-down rows). */
   uint8_t *capture_rgb;
@@ -74,6 +106,11 @@ int Dkc2SdlPresenterSetUpscaler(Dkc2SdlPresenter *presenter, int upscaler,
                                 float shading);
 const char *Dkc2SdlPresenterUpscalerName(int upscaler);
 bool Dkc2SdlPresenterUpscalerFromName(const char *name, int *upscaler);
+/* Select the display (kDkc2Display*) and the CRT settings it draws with.
+ * CRT falls back to Flat when its programs are unavailable, reporting why
+ * in crt_error. Returns the display actually in effect. */
+int Dkc2SdlPresenterSetDisplay(Dkc2SdlPresenter *presenter, int display,
+                               const Dkc2CrtSettings *crt);
 /* Arm a one-shot readback of the next presented drawable (RGB, row 0 at the
  * top). width/height receive the drawable size; the buffer must hold
  * width*height*3 bytes for the current drawable, so callers pass a buffer
@@ -82,6 +119,10 @@ void Dkc2SdlPresenterDrawableSize(Dkc2SdlPresenter *presenter, int *width,
                                   int *height);
 void Dkc2SdlPresenterArmCapture(Dkc2SdlPresenter *presenter, uint8_t *rgb,
                                 int width, int height);
+/* Resize the window (in points); the drawable follows the display's
+ * scale. For hidden captures at a chosen size. */
+void Dkc2SdlPresenterSetWindowSize(Dkc2SdlPresenter *presenter, int width,
+                                   int height);
 bool Dkc2SdlPresenterSetFullscreen(Dkc2SdlPresenter *presenter,
                                    bool fullscreen);
 bool Dkc2SdlPresenterIsFullscreen(const Dkc2SdlPresenter *presenter);

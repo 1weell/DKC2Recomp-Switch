@@ -554,6 +554,8 @@ static void ApplyOverlaySettings(SdlHost *host,
       (float)Dkc2LauncherReconstructStrength() / 100.0f,
       (float)Dkc2LauncherReconstructSoftness() / 100.0f,
       (float)Dkc2LauncherReconstructShading() / 100.0f);
+  (void)Dkc2SdlPresenterSetDisplay(&host->presenter, Dkc2LauncherDisplay(),
+                                   Dkc2LauncherCrt());
   host->audio_volume = updated.volume;
   for (int player = 0; player < kDkc2DesktopPlayerCount; player++) {
     host->player_source[player] =
@@ -706,6 +708,23 @@ static int RunGame(const char *rom_path,
     return 4;
   }
   {
+    /* DKC2_DESKTOP_TEST_WINDOW=WxH: size the window in points so a hidden
+     * capture can be taken at a chosen drawable size (the panel's full
+     * resolution on a Retina display is half its pixel size in points). */
+    const char *window_text = getenv("DKC2_DESKTOP_TEST_WINDOW");
+    if (window_text && *window_text) {
+      int width = 0, height = 0;
+      if (sscanf(window_text, "%dx%d", &width, &height) != 2 || width < 64 ||
+          height < 64 || width > 16384 || height > 16384) {
+        free(rom);
+        ShutdownHost(&host);
+        ShowError("DKC2_DESKTOP_TEST_WINDOW must be WIDTHxHEIGHT in points");
+        return 2;
+      }
+      Dkc2SdlPresenterSetWindowSize(&host.presenter, width, height);
+    }
+  }
+  {
     /* Upscaler: the launcher's remembered choice, overridable for one run
      * with DKC2_UPSCALER=nearest|bilinear|reconstruct; DKC2_RECONSTRUCT_MODE
      * (0..3) and DKC2_RECONSTRUCT_STRENGTH (0..100) tune the experiment. */
@@ -748,6 +767,75 @@ static int RunGame(const char *rom_path,
       fprintf(stderr, "warning: %s; using %s\n", host.presenter.shader_error,
               Dkc2SdlPresenterUpscalerName(effective));
   }
+  {
+    /* Display: the launcher's remembered choice, overridable with
+     * DKC2_DISPLAY=flat|crt; DKC2_CRT_PRESET and the DKC2_CRT_* sliders
+     * (SCANLINES, SHARPNESS, MASK, MASK_STRENGTH, GLOW, HALATION,
+     * CURVATURE) tune the tube. Like the upscaler, an override is
+     * remembered. */
+    int display = Dkc2LauncherDisplay();
+    const char *display_text = getenv("DKC2_DISPLAY");
+    if (display_text && *display_text) {
+      if (!Dkc2CrtDisplayFromName(display_text, &display)) {
+        free(rom);
+        ShutdownHost(&host);
+        ShowError("DKC2_DISPLAY must be flat or crt");
+        return 2;
+      }
+      Dkc2LauncherSetDisplay(display);
+    }
+    Dkc2CrtSettings crt = *Dkc2LauncherCrt();
+    bool crt_changed = false;
+    const char *preset_text = getenv("DKC2_CRT_PRESET");
+    if (preset_text && *preset_text) {
+      int preset = 0;
+      if (!Dkc2CrtPresetFromName(preset_text, &preset)) {
+        free(rom);
+        ShutdownHost(&host);
+        ShowError("DKC2_CRT_PRESET must be living-room, studio, soft, or custom");
+        return 2;
+      }
+      if (preset == kDkc2CrtPresetCustom) crt.preset = preset;
+      else (void)Dkc2CrtSettingsApplyPreset(&crt, preset);
+      crt_changed = true;
+    }
+    const char *mask_text = getenv("DKC2_CRT_MASK");
+    if (mask_text && *mask_text) {
+      int mask = 0;
+      if (!Dkc2CrtMaskFromName(mask_text, &mask)) {
+        free(rom);
+        ShutdownHost(&host);
+        ShowError("DKC2_CRT_MASK must be none, grille, grille-coarse, or slot");
+        return 2;
+      }
+      crt.mask = mask;
+      crt.preset = kDkc2CrtPresetCustom;
+      crt_changed = true;
+    }
+    struct {
+      const char *name;
+      int *value;
+    } sliders[] = {
+        {"DKC2_CRT_SCANLINES", &crt.scanlines},
+        {"DKC2_CRT_SHARPNESS", &crt.sharpness},
+        {"DKC2_CRT_MASK_STRENGTH", &crt.mask_strength},
+        {"DKC2_CRT_GLOW", &crt.glow},
+        {"DKC2_CRT_HALATION", &crt.halation},
+        {"DKC2_CRT_CURVATURE", &crt.curvature},
+    };
+    for (size_t i = 0; i < sizeof sliders / sizeof sliders[0]; i++) {
+      const char *text = getenv(sliders[i].name);
+      if (!text || !*text) continue;
+      *sliders[i].value = atoi(text);
+      crt.preset = kDkc2CrtPresetCustom;
+      crt_changed = true;
+    }
+    if (crt_changed) Dkc2LauncherSetCrt(&crt);
+    const int effective_display = Dkc2SdlPresenterSetDisplay(
+        &host.presenter, display, Dkc2LauncherCrt());
+    if (effective_display != display && host.presenter.crt_error[0])
+      fprintf(stderr, "warning: %s; using flat\n", host.presenter.crt_error);
+  }
   host.overlay = Dkc2DesktopOverlayCreate(settings);
   if (!host.overlay ||
       !Dkc2DesktopOverlayInitSdl(
@@ -780,10 +868,12 @@ static int RunGame(const char *rom_path,
   Dkc2DiagnosticsSetPresentation(
       Dkc2SdlPresenterBackend(&host.presenter),
       Dkc2DesktopScreenFilterName(screen_filter), host.audio_available);
-  fprintf(stdout, "Video: %s, %s, %s sampling, aspect=%s (%dx%d)\n",
+  fprintf(stdout,
+          "Video: %s, %s, %s sampling, display=%s, aspect=%s (%dx%d)\n",
           Dkc2SdlPresenterBackend(&host.presenter),
           Dkc2DesktopScreenFilterName(screen_filter),
           Dkc2SdlPresenterUpscalerName(host.presenter.upscaler),
+          Dkc2CrtDisplayName(host.presenter.display),
           Dkc2VideoAspectName(Dkc2VideoGetAspect()), Dkc2VideoWidth(),
           kFrameHeight);
   fprintf(stdout,
@@ -1237,10 +1327,11 @@ static int RunGame(const char *rom_path,
                      (size_t)host.presenter.capture_height * 3u,
                  shot);
           fclose(shot);
-          fprintf(stdout, "screenshot: %s (%dx%d, %s)\n", screenshot_path,
-                  host.presenter.capture_width,
+          fprintf(stdout, "screenshot: %s (%dx%d, %s, display=%s)\n",
+                  screenshot_path, host.presenter.capture_width,
                   host.presenter.capture_height,
-                  Dkc2SdlPresenterUpscalerName(host.presenter.upscaler));
+                  Dkc2SdlPresenterUpscalerName(host.presenter.upscaler),
+                  Dkc2CrtDisplayName(host.presenter.display));
         }
         screenshot_written = true;
         Dkc2SdlPresenterArmCapture(&host.presenter, NULL, 0, 0);

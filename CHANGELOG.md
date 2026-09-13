@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+- The Mac app has an optional CRT television display (pause menu >
+  Settings > Display). Each source line is drawn as an electron-beam
+  profile whose width follows its brightness, normalised so the picture
+  keeps its light; a fine aperture-grille mask, glow and halation, a gently
+  curved tube face, and a dither complete it. Three presets (Living room,
+  Studio monitor, Soft) and six sliders; the tube fades to the flat image
+  in small windows. `DKC2_DISPLAY=crt` and the `DKC2_CRT_*` variables
+  select it for a run, `DKC2_DESKTOP_TEST_WINDOW=WxH` sizes a hidden
+  capture, and `scripts/crt_capture_compare.py` checks a flat and a CRT
+  capture for conserved brightness, the right line pitch, and no beating.
+  The "Screen model" combo is now labelled "Phosphor colors"; its values
+  and config key are unchanged.
+
 ## 0.0.5 Refresh 2 - 2026-09-03
 
 The normal `v0.0.5-r2` release pairs the Mac archive rebuilt from commit

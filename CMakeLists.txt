@@ -224,6 +224,8 @@ if(DKC2_BUILD_SNESRECOMP)
             runner/verified_rom.c
             runner/desktop_fps.c
             runner/desktop_filter.c
+
+            runner/desktop_crt.c
             runner/desktop_input.c
             runner/input_recording.c
             runner/desktop_launcher.c
@@ -281,6 +283,8 @@ if(DKC2_BUILD_SNESRECOMP)
         runner/headless_host.c
         runner/verified_rom.c
         runner/desktop_filter.c
+
+        runner/desktop_crt.c
         runner/desktop_fps.c
         runner/desktop_input.c
         runner/input_recording.c
@@ -408,6 +412,26 @@ if(DKC2_BUILD_SNESRECOMP)
                 "reconstruct sampling.*result=desktop_completed frames=90.*host=sdl2"
             FAIL_REGULAR_EXPRESSION
                 "reconstruct shader failed;reconstruct shader unavailable"
+            TIMEOUT 30)
+
+        add_test(NAME supplied_rom_macos_crt_smoke
+            COMMAND ${CMAKE_COMMAND} -E env
+                DKC2_DESKTOP_TEST_FRAMES=90
+                DKC2_DESKTOP_TEST_HIDDEN=1
+                DKC2_DESKTOP_DISABLE_SRAM=1
+                DKC2_USER_DIR=${CMAKE_CURRENT_BINARY_DIR}/macos-test-user-crt
+                DKC2_ASPECT=16:9
+                DKC2_DISPLAY=crt
+                DKC2_DESKTOP_TEST_WINDOW=1728x1117
+                SNESRECOMP_NO_LAUNCHER=1
+                "$<TARGET_FILE:dkc2_snesrecomp_sdl>"
+                "${DKC2_ROM}")
+        set_tests_properties(supplied_rom_macos_crt_smoke PROPERTIES
+            LABELS "private;integration;native;desktop;macos;crt"
+            PASS_REGULAR_EXPRESSION
+                "display=crt.*result=desktop_completed frames=90.*host=sdl2"
+            FAIL_REGULAR_EXPRESSION
+                "crt .* shader failed;crt display unavailable;using flat"
             TIMEOUT 30)
 
         add_test(NAME supplied_rom_macos_quick_state_smoke
@@ -888,6 +912,19 @@ if(BUILD_TESTING)
     dkc2_enable_project_warnings(test_desktop_viewport)
     add_test(NAME desktop_viewport COMMAND test_desktop_viewport)
     set_tests_properties(desktop_viewport PROPERTIES
+        LABELS "unit;desktop;video;portable")
+
+    add_executable(test_desktop_crt
+        tests/test_desktop_crt.c
+        runner/desktop_crt.c)
+    target_include_directories(test_desktop_crt PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/runner)
+    if(NOT WIN32)
+        target_link_libraries(test_desktop_crt PRIVATE m)
+    endif()
+    dkc2_enable_project_warnings(test_desktop_crt)
+    add_test(NAME desktop_crt COMMAND test_desktop_crt)
+    set_tests_properties(desktop_crt PROPERTIES
         LABELS "unit;desktop;video;portable")
 
     add_executable(test_dkc2_video

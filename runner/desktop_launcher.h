@@ -1,6 +1,7 @@
 #ifndef DKC2_DESKTOP_LAUNCHER_H
 #define DKC2_DESKTOP_LAUNCHER_H
 
+#include "desktop_crt.h"
 #include "recomp_launcher.h"
 
 #include <stdbool.h>
@@ -27,6 +28,12 @@ int Dkc2LauncherReconstructSoftness(void);
 void Dkc2LauncherSetReconstructSoftness(int percent);
 int Dkc2LauncherReconstructShading(void);
 void Dkc2LauncherSetReconstructShading(int percent);
+/* Display choice (kDkc2Display*) and the CRT television settings it
+ * draws with, remembered with the launcher settings. */
+int Dkc2LauncherDisplay(void);
+void Dkc2LauncherSetDisplay(int display);
+const Dkc2CrtSettings *Dkc2LauncherCrt(void);
+void Dkc2LauncherSetCrt(const Dkc2CrtSettings *crt);
 
 void Dkc2LauncherSettingsDefault(RecompLauncherCSettings *settings);
 void Dkc2LauncherSettingsLoad(RecompLauncherCSettings *settings);

@@ -226,6 +226,39 @@ screen curvature, a bezel, or phosphor persistence. Nearest/Bilinear is a
 separate scaling choice. If OpenGL cannot start, the window is recreated and
 the atomic GDI compatibility presenter receives the same transformed pixels.
 
+The Mac app's pause menu adds a **Display** choice: the flat panel
+presentation or the CRT television simulation described in
+`docs/ARCHITECTURE.md`. `DKC2_DISPLAY=flat|crt` selects it for a run (the
+choice is remembered, like the upscaler), `DKC2_CRT_PRESET=living-room|
+studio|soft|custom` picks a preset, and `DKC2_CRT_SCANLINES`,
+`DKC2_CRT_SHARPNESS`, `DKC2_CRT_MASK=none|grille|grille-coarse|slot`,
+`DKC2_CRT_MASK_STRENGTH`, `DKC2_CRT_GLOW`, `DKC2_CRT_HALATION`, and
+`DKC2_CRT_CURVATURE` set the sliders (0 to 100). To judge the tube without
+a visible window, capture the same preserved state twice at the panel's
+size and compare:
+
+```sh
+for display in flat crt; do
+  DKC2_USER_DIR=/tmp/crt-user SNESRECOMP_NO_LAUNCHER=1 \
+  DKC2_DESKTOP_TEST_HIDDEN=1 DKC2_DESKTOP_TEST_FRAMES=70 \
+  DKC2_DESKTOP_DISABLE_SRAM=1 DKC2_ASPECT=16:9 \
+  DKC2_DESKTOP_TEST_WINDOW=1728x1117 DKC2_DISPLAY=$display \
+  DKC2_CRT_CURVATURE=0 \
+  DKC2_DESKTOP_TEST_LOADSTATE=/absolute/path/to/state.sav \
+  DKC2_DESKTOP_SCREENSHOT=/tmp/$display.ppm DKC2_DESKTOP_SCREENSHOT_FRAME=60 \
+  build/macos/DKC2Recomp.app/Contents/MacOS/DKC2Recomp "$ROM"
+done
+python3 scripts/crt_capture_compare.py /tmp/flat.ppm /tmp/crt.ppm
+```
+
+`DKC2_DESKTOP_TEST_WINDOW` is in points, so 1728x1117 is the 16-inch
+panel's 3456x2234 drawable. The compare script passes when the mean linear
+luminance is within three percent, the strongest short period in the row
+profile is the line pitch, and there is no periodic residual between the
+smoothed profiles; curvature is switched off for the capture because the
+warp shifts rows against the flat reference. The state path must be
+absolute, since the app changes into its user directory.
+
 For repeatable tests without changing `launcher.cfg`, set `DKC2_SCREEN` to
 `raw`, `crt`, `composite`, or `trinitron`. `DKC2_DESKTOP_REQUIRE_GPU=1` turns an
 OpenGL initialization failure into a test failure;

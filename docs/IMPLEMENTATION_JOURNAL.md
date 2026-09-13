@@ -5370,3 +5370,60 @@ had neither. `scripts/analyze_pacing_log.py` reads the log and estimates
 the refreshes each frame was shown for, which is the number that answers
 the owner's report; it lives in the repository with a test so the next
 pacing question starts from the same instrument.
+
+## 2026-09-04 - CRT television display for the Retina panel
+
+The owner asked for an optional CRT mode that looks like an older
+television on the 16-inch MacBook Pro, explicitly not the kind of shader
+that lays dark lines over the picture and dims it. The plan
+(`docs/CRT_DISPLAY_PLAN.md`) and its build are the same day's work.
+
+The premise is physical. Fullscreen on this panel the frame lands at 8.7
+to 10 panel pixels per scanline and 10 to 12 per column, so a source pixel
+is about a millimetre across, the scale of a 14-inch professional monitor.
+A fixed line pattern at that fractional pitch beats against the source rows
+and always takes the same light from every row; a beam does neither. The
+new `desktop_crt.c` model gives every source line a Gaussian whose width
+grows with its brightness per channel (0.50 to 0.18 line pitches at the
+dark end from the scanlines slider, 0.50 for white), normalised so the
+periodic sum averages exactly the source brightness for any width: a white
+field ripples by about five percent, a dim one shows its lines. The pure C
+model is unit-tested for that conservation across widths, for the mask
+gain, for the fades that switch the beam and mask off in small windows,
+and for the name and preset parsing; the shader is the same arithmetic in
+GLSL 1.20 on the legacy 2.1 context, which a probe showed exposes float
+textures, framebuffer objects, and sRGB on the M3 Max.
+
+Five passes in half-float: lines (sRGB decode plus a horizontal Gaussian in
+source pixels), beam, a 4x4 downsample and separable blurs for glow and
+again for halation, and compose (cylindrical curvature with rounded
+corners and a vignette, the glow added energy-neutrally, an aperture-grille
+mask in window pixels with the inverse of its mean transmission as gain and
+a soft knee above 0.9, sRGB encoding, a triangular dither). The presenter
+was refactored so the window and the hidden capture share one render
+function, since the old capture path redrew a single quad and would have
+missed a multi-pass chain; `DKC2_DESKTOP_TEST_WINDOW` sizes a hidden window
+in points so captures come out at the panel's 3456x2234.
+
+Verification on preserved states (Bramble Blast's barrel start and the
+castle start, a bright and a dark scene) with `scripts/crt_capture_compare.py`:
+mean linear luminance 0.995 and 0.997 of the flat capture, strongest row
+period 9 px for the 8.66-px pitch, and no periodic residual once the check
+was done in linear light with the scene-following trend removed (the first
+version compared gamma-space row means and reported the beam's own vertical
+spread and the knee's highlight compression as a 20% "envelope", and the
+first pitch detector picked the second harmonic because 2 x 8.66 lands
+nearer an integer lag). The captures read as a tube: lines soft in the
+castle's shadows, gone in the bramble sky, the mask a texture rather than a
+grid at the panel's density. The living-room default was softened from
+scanlines 70 to 55 after the first look at the dark scene.
+
+What is honest about the SDR panel: at mask strength 0.3 a white field
+loses a few percent to the knee, and a full-strength mask cannot be made
+bright without HDR headroom that SDL's OpenGL path does not expose. The
+tube bypasses the upscaler (the lines pass is the scaler); chaining
+Reconstruct's dither decoding ahead of it is left for later. Pacing in
+fullscreen 16:9 with the tube on (`DKC2_PACING_LOG`, 1260 display-locked
+frames from the bramble state) showed every frame for exactly one refresh;
+the present call's mean rose from 1.5 ms to 2.8 ms, the five passes over a
+3456x1940 viewport, well inside the 16.7 ms frame.

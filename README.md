@@ -417,6 +417,25 @@ colors are close. Its mode combo adds the stages one at a time and sliders
 scale the edge blend, the softness, and the shading;
 `DKC2_UPSCALER=nearest|bilinear|reconstruct` overrides the saved choice.
 
+The Settings page's **Display** combo switches the Mac app from the flat
+panel presentation to an optional **CRT television** simulation
+(`docs/CRT_DISPLAY_PLAN.md` is its design). It is not a scanline overlay:
+every source line becomes an electron-beam profile whose width grows with
+its brightness, so bright lines widen and merge while dark lines stay thin,
+and the beam is normalised so the picture keeps its brightness. A fine
+aperture-grille phosphor mask (three panel pixels per triad, below the eye's
+resolving limit at arm's length), a soft glow and halation from blurred
+copies, a gently curved tube face with rounded corners, and a dither finish
+the look. "Living room" is the default preset; "Studio monitor" is sharper
+and flat, "Soft" is wider and glowier, and the sliders (scanlines,
+sharpness, mask, glow, halation, curvature) make a custom tube. The
+upscaler is bypassed while the tube is on, and the tube fades to the flat
+image in small windows where its lines cannot be drawn.
+`DKC2_DISPLAY=flat|crt`, `DKC2_CRT_PRESET=living-room|studio|soft`, and
+the `DKC2_CRT_*` sliders override the saved choice. The frame after the
+phosphor-color model is the tube's input, so those models still apply; the
+native frame, its hashes, and save states are untouched.
+
 Visible OpenGL gameplay windows on Windows request a one-buffer swap interval
 to reduce tearing. The accepted status is written with the presentation
 backend in `diagnostics/last_run_report.json`; `on` means the graphics driver
