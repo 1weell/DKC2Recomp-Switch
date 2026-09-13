@@ -1,7 +1,7 @@
 <#
 Package a completed DKC2Recomp Windows release build.
 
-The zip contains the executable, MinGW runtime dependencies, the Dear ImGui
+The zip contains the executables, selected compiler runtime dependencies, the Dear ImGui
 recomp-ui assets, the North American retail cover used by the launcher,
 README, changelog, and license. It deliberately does not stage ROMs, generated
 C, saves, screenshots, audio, or local launcher state.
@@ -12,17 +12,27 @@ param(
 
     [string]$BuildDirectory = "build-release",
 
-    [string]$RuntimeBinDirectory = "C:\msys64\mingw64\bin"
+    [string]$RuntimeBinDirectory = "C:\msys64\mingw64\bin",
+
+    [ValidateSet("MinGW", "MSVC")]
+    [string]$RuntimeKind = "MinGW",
+
+    [string]$SdlLicensePath = ""
 )
 
 $ErrorActionPreference = "Stop"
+if ($Version -notmatch '^[0-9]+\.[0-9]+\.[0-9]+(?:-[A-Za-z0-9.-]+)?$') {
+    throw "Version must be a three-part release number with an optional suffix."
+}
 
 $Repository = Split-Path -Parent $PSScriptRoot
-$Build = Join-Path $Repository $BuildDirectory
+$Build = if ([IO.Path]::IsPathRooted($BuildDirectory)) {
+    [IO.Path]::GetFullPath($BuildDirectory)
+} else { Join-Path $Repository $BuildDirectory }
 $Executable = Join-Path $Build "DKC2Recomp.exe"
 $Assets = Join-Path $Build "assets"
 $Output = Join-Path $Repository "release-stage"
-$StageName = "DKC2Recomp-windows-x64-v$Version"
+$StageName = "DKC2Recomp-v$Version-Windows-x64"
 $Stage = Join-Path $Output $StageName
 $Archive = Join-Path $Output "$StageName.zip"
 
@@ -50,6 +60,9 @@ if (Test-Path -LiteralPath $Archive) {
 New-Item -ItemType Directory -Path $Stage -Force | Out-Null
 
 Copy-Item -LiteralPath $Executable -Destination $Stage
+if (Test-Path -LiteralPath (Join-Path $Build "DKC2RecompSDL.exe")) {
+    Copy-Item -LiteralPath (Join-Path $Build "DKC2RecompSDL.exe") -Destination $Stage
+}
 
 # recomp-ui's build directory contains art for every supported console. Stage
 # only the generic launcher chrome, licensed fonts, SNES controller art, and
@@ -81,6 +94,23 @@ Copy-Item -LiteralPath (Join-Path $Repository "README.md") -Destination $Stage
 Copy-Item -LiteralPath (Join-Path $Repository "CHANGELOG.md") -Destination $Stage
 Copy-Item -LiteralPath (Join-Path $Repository "LICENSE") -Destination $Stage
 Copy-Item -LiteralPath (Join-Path $Repository "THIRD_PARTY_NOTICES.md") -Destination $Stage
+$ReleaseNotes = Join-Path $Repository "RELEASE-NOTES-v$Version.md"
+if (Test-Path -LiteralPath $ReleaseNotes -PathType Leaf) {
+    Copy-Item -LiteralPath $ReleaseNotes -Destination $Stage
+}
+foreach ($Relative in @("docs\PROJECT_KONGS.md", "docs\MSU1_AUDIO.md",
+                        "scripts\import_project_kongs.py")) {
+    $Target = Join-Path $Stage $Relative
+    New-Item -ItemType Directory -Path (Split-Path -Parent $Target) -Force | Out-Null
+    Copy-Item -LiteralPath (Join-Path $Repository $Relative) -Destination $Target
+}
+foreach ($Component in @("dkc3_menu", "dkc_msu1", "project_kongs")) {
+    $Target = Join-Path $Stage "third_party\$Component"
+    New-Item -ItemType Directory -Path $Target -Force | Out-Null
+    Get-ChildItem -LiteralPath (Join-Path $Repository "third_party\$Component") -File |
+        Where-Object { $_.Name -eq "README.md" -or $_.Name -like "LICENSE*" } |
+        ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination $Target }
+}
 
 $LicenseDirectory = Join-Path $Stage "licenses"
 New-Item -ItemType Directory -Path $LicenseDirectory -Force | Out-Null
@@ -88,12 +118,19 @@ $LicenseFiles = @(
     @{ Source = (Join-Path $Repository "third_party\licenses\Lato-OFL.txt"); Name = "Lato-OFL.txt" },
     @{ Source = (Join-Path $Repository "recomp-ui\src\third_party\imgui\LICENSE.txt"); Name = "DearImGui-LICENSE.txt" },
     @{ Source = (Join-Path $Repository "third_party\lakesnes_apu\LICENSE.txt"); Name = "LakeSnes-LICENSE.txt" },
-    @{ Source = (Join-Path $Repository "snesrecomp\THIRD_PARTY_ATTRIBUTION.md"); Name = "snesrecomp-THIRD_PARTY_ATTRIBUTION.md" },
+    @{ Source = (Join-Path $Repository "snesrecomp\THIRD_PARTY_ATTRIBUTION.md"); Name = "snesrecomp-THIRD_PARTY_ATTRIBUTION.md" }
+)
+if ($RuntimeKind -eq "MinGW") {
+    $LicenseFiles += @(
     @{ Source = (Join-Path $RuntimeBinDirectory "..\share\licenses\SDL2\LICENSE.txt"); Name = "SDL2-LICENSE.txt" },
     @{ Source = (Join-Path $RuntimeBinDirectory "..\share\licenses\gcc-libs\COPYING.LIB"); Name = "GCC-COPYING.LIB" },
     @{ Source = (Join-Path $RuntimeBinDirectory "..\share\licenses\gcc-libs\COPYING.RUNTIME"); Name = "GCC-COPYING.RUNTIME" },
     @{ Source = (Join-Path $RuntimeBinDirectory "..\share\licenses\libwinpthread\COPYING"); Name = "libwinpthread-COPYING" }
 )
+} else {
+    if (-not $SdlLicensePath) { throw "MSVC packaging requires -SdlLicensePath for the built SDL2 revision." }
+    $LicenseFiles += @{ Source = $SdlLicensePath; Name = "SDL2-LICENSE.txt" }
+}
 foreach ($LicenseFile in $LicenseFiles) {
     $Source = [IO.Path]::GetFullPath($LicenseFile.Source)
     if (-not (Test-Path -LiteralPath $Source -PathType Leaf)) {
@@ -108,10 +145,14 @@ $RuntimeDlls = @(
     "libstdc++-6.dll",
     "libwinpthread-1.dll"
 )
+if ($RuntimeKind -eq "MSVC") {
+    Copy-Item -LiteralPath (Join-Path $Build "SDL2.dll") -Destination $Stage
+    $RuntimeDlls = @("msvcp140.dll", "vcruntime140.dll", "vcruntime140_1.dll")
+}
 foreach ($Name in $RuntimeDlls) {
     $Source = Join-Path $RuntimeBinDirectory $Name
     if (-not (Test-Path -LiteralPath $Source -PathType Leaf)) {
-        throw "Required MinGW runtime DLL missing: $Source"
+        throw "Required $RuntimeKind runtime DLL missing: $Source"
     }
     Copy-Item -LiteralPath $Source -Destination $Stage
 }
@@ -119,10 +160,13 @@ foreach ($Name in $RuntimeDlls) {
 $ForbiddenExtensions = @(
     ".sfc", ".smc", ".fig", ".swc", ".rom",
     ".sav", ".srm", ".state", ".wram", ".vram", ".oam",
-    ".ppm", ".bmp", ".png", ".wav", ".pcm", ".mp3", ".flac"
+    ".ppm", ".bmp", ".png", ".wav", ".pcm", ".mp3", ".flac", ".dkc2kongs"
 )
 $ForbiddenFiles = Get-ChildItem -LiteralPath $Stage -Recurse -File |
-    Where-Object { $ForbiddenExtensions -contains $_.Extension.ToLowerInvariant() }
+    Where-Object {
+        $ForbiddenExtensions -contains $_.Extension.ToLowerInvariant() -or
+        $_.Name -in @("rom.cfg", "launcher.cfg", "kongs.cfg", "msu1.cfg", "keybinds.ini")
+    }
 if ($ForbiddenFiles) {
     throw "Release contains forbidden ROM/save/capture assets: $($ForbiddenFiles.FullName -join ', ')"
 }
@@ -148,7 +192,19 @@ if ($ForbiddenDirectories) {
     throw "Release contains forbidden private/generated directories: $($ForbiddenDirectories.FullName -join ', ')"
 }
 
+$SourceCommit = "unversioned"
+if (Test-Path -LiteralPath (Join-Path $Repository '.git')) {
+    $SourceCommit = & git -C $Repository rev-parse HEAD
+    if ($LASTEXITCODE -ne 0) { throw 'Cannot record release source commit' }
+}
+@(
+    "ProjectVersion=$Version", "SourceCommit=$SourceCommit", "RuntimeKind=$RuntimeKind",
+    "DKC2RecompSha256=$((Get-FileHash -LiteralPath $Executable -Algorithm SHA256).Hash.ToLowerInvariant())",
+    "No ROM, character pack, music pack, saves or local configuration is included."
+) | Set-Content -LiteralPath (Join-Path $Stage 'VERSION.txt') -Encoding UTF8
 Compress-Archive -Path (Join-Path $Stage "*") -DestinationPath $Archive
+$Hash = (Get-FileHash -LiteralPath $Archive -Algorithm SHA256).Hash.ToLowerInvariant()
+[IO.File]::WriteAllText("$Archive.sha256", "$Hash  $StageName.zip`n", [Text.Encoding]::ASCII)
 
 Write-Output "release_archive=$Archive"
 Write-Output "release_sha256=$((Get-FileHash -LiteralPath $Archive -Algorithm SHA256).Hash.ToLowerInvariant())"

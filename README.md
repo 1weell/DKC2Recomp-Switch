@@ -47,11 +47,15 @@ pack...**. Game art is never included in this source tree or the app bundle.
 
 ### Windows release
 
-1. Download `DKC2Recomp-v0.0.5-Windows-x64.zip` from
+1. Download `DKC2Recomp-v0.0.7-Windows-x64.zip` from
    [Releases](../../releases) and extract the complete archive.
 2. Run `DKC2Recomp.exe`.
 3. In the Dear ImGui launcher, select your own legally obtained North American
    v1.0 ROM and choose **Play**.
+
+`DKC2RecompSDL.exe` is the alternate SDL host. Keep the bundled DLLs and
+`assets` directory beside both executables. The archive also includes the
+character importer and MSU-1 setup guides; supply those packs separately.
 
 The selected external path is remembered in `rom.cfg` beside the executable.
 The ROM is never copied into the release. Saves are written to
@@ -131,8 +135,9 @@ disagree while its data is intact.
 
 The v0.0.6 Mac archive is an ad-hoc-signed Apple-silicon build and is not
 notarized. It adds the CRT television display, the Retina pause-menu fix, and
-the optional Donkey/Kiddy character slots; the most recent Windows build is
-the `v0.0.5-r2` archive, which predates them. If Gatekeeper quarantines the
+the optional Donkey/Kiddy character slots. The v0.0.7 release carries this
+Mac archive unchanged alongside the new Windows build; the Mac binary does
+not contain the new simultaneous co-op or MSU-1 support. If Gatekeeper quarantines the
 downloaded archive, open the app from Finder with **Control-click > Open** and
 confirm once.
 

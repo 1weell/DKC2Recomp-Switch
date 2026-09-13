@@ -8,7 +8,9 @@ Rare game content.
   license text is shipped as `licenses/DearImGui-LICENSE.txt`.
 - SDL2 — zlib license. The installed runtime's license is shipped as
   `licenses/SDL2-LICENSE.txt`.
-- GCC runtime libraries and winpthreads — GNU licenses with the GCC Runtime
+- MSVC builds include Microsoft's app-local Visual C++ runtime DLLs from the
+  installed Visual Studio redistributable directory. Copyright Microsoft.
+- MinGW builds use GCC runtime libraries and winpthreads — GNU licenses with the GCC Runtime
   Library Exception where applicable. The installed runtime notices are
   shipped under `licenses/`.
 - Lato Latin fonts — SIL Open Font License 1.1. The OFL text is shipped as

@@ -1,5 +1,28 @@
 # Interactive desktop test builds
 
+## v0.0.7 release packaging
+
+`scripts/make_release.ps1` supports `-RuntimeKind MSVC` with the built
+`build/Release` directory, `-RuntimeBinDirectory` pointing to the installed
+Visual Studio `VC/Redist/MSVC/<version>/x64/Microsoft.VC143.CRT` directory,
+and `-SdlLicensePath build/_deps/sdl2-src/LICENSE.txt`. The default MinGW
+mode remains available. It stages both desktop hosts when present, required
+DLLs, launcher assets, character importer, setup guides, source provenance and
+licenses, then writes a SHA-256 sidecar. It never copies local settings or
+external character/music packs. `make_release` tests both compiler layouts
+with synthetic inputs and rejects release-path traversal.
+
+For acceptance, extract the ZIP into a new external directory, compare the
+executable hashes with the build, and run each host with the supported
+external ROM and `DKC2_DESKTOP_TEST_HIDDEN=1`,
+`DKC2_DESKTOP_TEST_FRAMES=180`, `DKC2_DESKTOP_TEST_OVERLAY=1`,
+`DKC2_DESKTOP_DISABLE_SRAM=1`, and `SNESRECOMP_NO_LAUNCHER=1`.
+Exercise both CRT and flat Reconstruct preferences. For the SDL host,
+`DKC2_DESKTOP_TEST_LOADSTATE` can load a private scene for MSU-1 track checks.
+Keep the ZIP itself pristine; test configuration and output belong only in
+the external extraction. A carried Mac archive must match its source release
+digest and keep its original filename and embedded version.
+
 ## Scope
 
 `dkc2_snesrecomp_desktop` is the accepted Windows presentation host for

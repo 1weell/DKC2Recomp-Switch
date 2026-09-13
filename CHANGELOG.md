@@ -1,5 +1,68 @@
 # Changelog
 
+## 0.0.7 (alpha) - 2026-09-13
+
+- Added CRT television on Windows OpenGL and SDL with three presets plus
+  Custom, six tuning sliders and four masks. Both hosts share one pipeline.
+  Fixed a reserved GLSL variable name rejected by the NVIDIA driver.
+- Added Donkey/Kiddy selection and external Project Kongs packs, mounted poses,
+  hand slap/body slam, barrel and team-throw poses. Each slot retains its own
+  attack/throw state during simultaneous co-op.
+- Added live MSU-1 folder selection, enablement and music volume, stock SFX
+  preservation, primary/secondary track mapping and missing-track fallback.
+
+- Added native Windows OpenGL Reconstruct with all five modes and three tuning
+  controls. GDI exposes Nearest/Bilinear and preserves requested shader settings;
+  the pause menu gates controls using actual renderer capability.
+
+- Fixed banana trails ignoring the on-foot TEAM player while the other rides
+  an animal. Pirate Panic checks cover both player roles, mounted save/load,
+  ordinary dismounted collection and overlapping pickups without double awards.
+
+- Fixed co-op movement stopping at the native 4:3 boundary in widescreen.
+  Both Kongs can use the rendered 16:10/16:9 side areas, including shifted
+  views near level edges, while retaining the outer level limits.
+
+- Fixed either TEAM player mounting Rambi, retaining separate rider/on-foot
+  controls, dismount/remount and ownership across save/load.
+- Fixed death handoff moving the survivor to the dying Kong and leaving
+  enemies frozen after the survivor regained control.
+- Added private animal-save and blank-SRAM death-handoff acceptance checks.
+- Fixed TEAM barrel attachment, animation and release terrain checks using
+  the other Kong's position, including regular barrels thrown between heights.
+- Fixed inactive-Kong recovery leaving Player 2 locked after a roll or stomp.
+- Fixed leader swaps leaving the other player with follower-only collisions.
+  Lost Kongs now wait for DK-barrel revival instead of rejoining on input;
+  the surviving player skips the alternating TEAM turn prompt. Loss state
+  survives saves and rewind while existing save slots remain loadable.
+- Added private barrel, damage/revival/save-load and reported ledges-state
+  regressions; attack checks now require walking and jumping after each kill.
+- Fixed TEAM Player 2 retaining the follower's disabled collisions and dim
+  palette. Both Kongs now have separate attack hitboxes and normal colors;
+  stomping an enemy bounces the Kong that hit it. Private first-level checks
+  cover P2 rolls, stomps, contact damage, normal palettes and P1 roll attacks.
+- Added dark Game/View/Input dropdowns to both Windows hosts, including live
+  display and input-source selections, fullscreen, pause and Quick Save/Load
+  independent of the Assist shortcut gate. Fullscreen hides and restores the bar.
+- Fixed Win32 keyboard mapping when the launcher is skipped or SDL has shut
+  down, retained short keyboard taps between frames, cleared input on focus/menu
+  transitions, and consumed Start+Back through both buttons' release.
+
+- Added the full Escape ImGui overlay to the GDI compatibility renderer,
+  including mouse/keyboard controls, settings, bindings and resize support.
+- Added simultaneous TEAM control with per-Kong input words and a live
+  classic-policy option. Fixed the follower returning to leader-history
+  playback after landing by selecting the input state before follower dispatch.
+  Other hurt, carry and barrel handlers remain in place; complete death/respawn
+  and physical two-player coverage remains unverified.
+- Strengthened generated-code validation to reject nested/misplaced existing
+  co-op wrappers. A new blank-SRAM TEAM route checks separate movement,
+  post-landing control and simultaneous movement against classic mode,
+  running 3,518 frames per policy with all temporary files outside Git.
+
+- Release includes the unchanged v0.0.6 macOS arm64 archive; the new co-op
+  and MSU-1 behavior is verified in the Windows build.
+
 ## 0.0.6 - 2026-09-12
 
 - Fixed Kiddy rapidly alternating upright/horizontal hurt poses after a team
@@ -97,63 +160,7 @@ changes. Both builds retain the embedded 0.0.5 application version.
   changes only the quick save named by `--snapshot`. Backups are never
   overwritten; a second run numbers its backup.
 
-- Added CRT television on Windows OpenGL and SDL with three presets plus
-  Custom, six tuning sliders and four masks. Both hosts share one pipeline.
-  Fixed a reserved GLSL variable name rejected by the NVIDIA driver.
-- Added Donkey/Kiddy selection and external Project Kongs packs, mounted poses,
-  hand slap/body slam, barrel and team-throw poses. Each slot retains its own
-  attack/throw state during simultaneous co-op.
-- Added live MSU-1 folder selection, enablement and music volume, stock SFX
-  preservation, primary/secondary track mapping and missing-track fallback.
 
-- Added native Windows OpenGL Reconstruct with all five modes and three tuning
-  controls. GDI exposes Nearest/Bilinear and preserves requested shader settings;
-  the pause menu gates controls using actual renderer capability.
-
-- Fixed banana trails ignoring the on-foot TEAM player while the other rides
-  an animal. Pirate Panic checks cover both player roles, mounted save/load,
-  ordinary dismounted collection and overlapping pickups without double awards.
-
-- Fixed co-op movement stopping at the native 4:3 boundary in widescreen.
-  Both Kongs can use the rendered 16:10/16:9 side areas, including shifted
-  views near level edges, while retaining the outer level limits.
-
-- Fixed either TEAM player mounting Rambi, retaining separate rider/on-foot
-  controls, dismount/remount and ownership across save/load.
-- Fixed death handoff moving the survivor to the dying Kong and leaving
-  enemies frozen after the survivor regained control.
-- Added private animal-save and blank-SRAM death-handoff acceptance checks.
-- Fixed TEAM barrel attachment, animation and release terrain checks using
-  the other Kong's position, including regular barrels thrown between heights.
-- Fixed inactive-Kong recovery leaving Player 2 locked after a roll or stomp.
-- Fixed leader swaps leaving the other player with follower-only collisions.
-  Lost Kongs now wait for DK-barrel revival instead of rejoining on input;
-  the surviving player skips the alternating TEAM turn prompt. Loss state
-  survives saves and rewind while existing save slots remain loadable.
-- Added private barrel, damage/revival/save-load and reported ledges-state
-  regressions; attack checks now require walking and jumping after each kill.
-- Fixed TEAM Player 2 retaining the follower's disabled collisions and dim
-  palette. Both Kongs now have separate attack hitboxes and normal colors;
-  stomping an enemy bounces the Kong that hit it. Private first-level checks
-  cover P2 rolls, stomps, contact damage, normal palettes and P1 roll attacks.
-- Added dark Game/View/Input dropdowns to both Windows hosts, including live
-  display and input-source selections, fullscreen, pause and Quick Save/Load
-  independent of the Assist shortcut gate. Fullscreen hides and restores the bar.
-- Fixed Win32 keyboard mapping when the launcher is skipped or SDL has shut
-  down, retained short keyboard taps between frames, cleared input on focus/menu
-  transitions, and consumed Start+Back through both buttons' release.
-
-- Added the full Escape ImGui overlay to the GDI compatibility renderer,
-  including mouse/keyboard controls, settings, bindings and resize support.
-- Added simultaneous TEAM control with per-Kong input words and a live
-  classic-policy option. Fixed the follower returning to leader-history
-  playback after landing by selecting the input state before follower dispatch.
-  Other hurt, carry and barrel handlers remain in place; complete death/respawn
-  and physical two-player coverage remains unverified.
-- Strengthened generated-code validation to reject nested/misplaced existing
-  co-op wrappers. A new blank-SRAM TEAM route checks separate movement,
-  post-landing control and simultaneous movement against classic mode,
-  running 3,518 frames per policy with all temporary files outside Git.
 
 ## 0.0.5 (alpha) - 2026-09-03
 

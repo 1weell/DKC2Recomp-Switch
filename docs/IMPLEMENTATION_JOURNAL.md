@@ -6243,3 +6243,27 @@ The owner's quick snapshot remained unchanged (SHA-256
 `4123ce28e54f2eaf7cda66e14374d530bf845b605550f5797d091bd66682e421`).
 The DKC3 checkout remained clean, and `git diff --check` passed. Private ROM,
 snapshot, character pack, music and acceptance outputs remain outside Git.
+
+## 2026-09-13 - v0.0.7 Windows release and carried Mac artifact
+
+Committed the feature work and merged origin/main v0.0.6 (`c9ce402`) without
+discarding either history. Conflict resolution retains per-slot Kong moves,
+co-op owner callbacks, shared WGL/SDL CRT and strict environment parsing,
+MSU-1 and haptics, while bringing forward SDL audio rate control, Mac pacing,
+Retina layout and save tools. Rebuilt as 0.0.7 and passed all 84 configured
+CTest checks in 194.47 seconds (`build/v0.0.7-tests.log`).
+
+The release packager now supports MSVC app-local dependencies, both playable
+hosts, the importer and setup guides, all new license/provenance texts and
+archive checksums. Synthetic fixtures cover MSVC/MinGW packages, private-file
+exclusion and invalid version paths. Fresh extracted executables matched the
+build and passed four 180-frame CRT/Reconstruct runs; SDL restored the mounted
+scene with MSU-1 track 6. A separate clean extraction opened the ROM picker.
+The owner's settings were restored after tests and the original snapshot
+retained its recorded hash.
+
+The new release carries the unchanged v0.0.6 Mac ZIP and checksum. Both match
+the source GitHub asset digests; Info.plist remains 0.0.6 and the executable
+matches the original published hash. The Mac binary was not rebuilt or run
+on this Windows host and does not include the new co-op/MSU-1 integration.
+See RELEASE-NOTES-v0.0.7.md for public coverage and limits.

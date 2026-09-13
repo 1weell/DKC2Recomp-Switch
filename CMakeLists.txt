@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.20)
 
 project(dkc2_port
-    VERSION 0.0.6
+    VERSION 0.0.7
     DESCRIPTION "Native PC recompilation of Donkey Kong Country 2"
     LANGUAGES C)
 
@@ -1124,6 +1124,11 @@ if(BUILD_TESTING)
                 -Script "${CMAKE_CURRENT_SOURCE_DIR}/scripts/create_windows_version.ps1")
         set_tests_properties(create_windows_version PROPERTIES
             LABELS "unit;packaging;windows")
+        add_test(NAME make_release
+            COMMAND powershell -NoProfile -ExecutionPolicy Bypass
+                -File "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_make_release.ps1"
+                -Script "${CMAKE_CURRENT_SOURCE_DIR}/scripts/make_release.ps1")
+        set_tests_properties(make_release PROPERTIES LABELS "unit;packaging;windows")
 
         add_executable(test_desktop_shaders
             tests/test_desktop_shaders.c runner/desktop_filter.c
