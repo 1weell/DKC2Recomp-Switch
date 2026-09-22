@@ -20,6 +20,55 @@ fallback. SNES hardware outside the main CPU—the PPU,
 SPC700/S-DSP, DMA/HDMA, controllers, and cartridge mapping—is modeled by the
 shared runtime.
 
+## Nintendo Switch port
+
+This repository also contains the Nintendo Switch host port. It uses libnx,
+SDL2 and the shared `snesrecomp` runtime, with the existing DKC2 16:9 path
+enabled for a 342x224 logical framebuffer presented at 1280x720. The Switch
+host includes physical-position-correct B/Y/A/X mapping, SRAM under
+`.runtime/`, and the SNES DSP audio callback.
+
+### Switch build requirements
+
+- devkitPro with devkitA64, libnx and SDL2 for Switch;
+- `nacptool`, `elf2nro`, Ninja, Python and Cargo;
+- your own North American v1.0 DKC2 ROM.
+
+The ROM is never committed. The generator accepts only the verified revision:
+
+```text
+SHA-256: 35421a9af9dd011b40b91f792192af9f99c93201d8d394026bdfb42cbf2d8633
+```
+
+Configure and build from the devkitPro MSYS2 shell. This project uses all 16
+parallel jobs for the Switch build:
+
+```sh
+export DEVKITPRO=/c/devkitPro
+export DEVKITA64=/c/devkitPro/devkitA64
+cmake -S . -B build-switch -G Ninja \
+  -DCMAKE_TOOLCHAIN_FILE=cmake/toolchains/switch-devkitA64.cmake \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DDKC2_BUILD_SNESRECOMP_SWITCH=ON
+cmake --build build-switch --parallel 16
+```
+
+Copy these two private files to the SD card:
+
+```text
+/switch/DKC2Recomp/DKC2RecompSwitch.nro
+/switch/DKC2Recomp/DKC2-USA-v1.0.sfc
+```
+
+The build is hardware-tested for boot, video, controls and audio startup.
+Widescreen margin behavior and the remaining small intro transition glitch
+should be validated using [`docs/WIDESCREEN_DIAGNOSTICS.md`](docs/WIDESCREEN_DIAGNOSTICS.md).
+
+The complete Switch port workflow is documented in
+[`BUILDING_SWITCH.md`](BUILDING_SWITCH.md), with implementation history in
+[`PORTING_WORKLOG.md`](PORTING_WORKLOG.md) and the current checkpoint in
+[`PORT_STATUS.md`](PORT_STATUS.md).
+
 ## Optional Donkey and Kiddy characters
 
 Open the in-game pause menu with **Escape**, then choose **Characters**.

@@ -1,11 +1,15 @@
 /build/
 /build-*/
+/build-switch*/
+/tmp/
 /.cache/
 /.vs/
 /.idea/
 /.vscode/
 /private/
 /generated/
+*.nro
+*.nacp
 /recordings/
 /src/gen/
 /release-stage/

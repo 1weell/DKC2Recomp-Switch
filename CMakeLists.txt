@@ -38,10 +38,18 @@ option(DKC2_BUILD_SNESRECOMP
     "Build the experimental snesrecomp headless and desktop runners" OFF)
 option(DKC2_BUILD_SNESRECOMP_HEADLESS
     "Deprecated alias for DKC2_BUILD_SNESRECOMP" OFF)
+option(DKC2_BUILD_SNESRECOMP_SWITCH
+    "Build the Nintendo Switch SDL2 host" OFF)
 option(DKC2_FETCH_SDL2
     "Fetch the pinned SDL2 source when no system package is available" ON)
 if(DKC2_BUILD_SNESRECOMP_HEADLESS)
     set(DKC2_BUILD_SNESRECOMP ON)
+endif()
+if(DKC2_BUILD_SNESRECOMP_SWITCH)
+    set(DKC2_BUILD_SNESRECOMP ON)
+    set(DKC2_FETCH_SDL2 OFF)
+    set(BUILD_TESTING OFF CACHE BOOL
+        "Disable desktop-only tests in the Nintendo Switch profile" FORCE)
 endif()
 
 add_library(dkc2_lakesnes_apu STATIC
@@ -109,17 +117,19 @@ if(MSVC)
     target_compile_options(dkc2_lakesnes_apu PRIVATE /W0)
 endif()
 
-add_executable(dkc2_verify app/verify_main.c)
-target_link_libraries(dkc2_verify PRIVATE dkc2_core)
-dkc2_enable_project_warnings(dkc2_verify)
+if(NOT DKC2_BUILD_SNESRECOMP_SWITCH)
+    add_executable(dkc2_verify app/verify_main.c)
+    target_link_libraries(dkc2_verify PRIVATE dkc2_core)
+    dkc2_enable_project_warnings(dkc2_verify)
 
-add_executable(dkc2_analyze app/analyze_main.c)
-target_link_libraries(dkc2_analyze PRIVATE dkc2_core)
-dkc2_enable_project_warnings(dkc2_analyze)
+    add_executable(dkc2_analyze app/analyze_main.c)
+    target_link_libraries(dkc2_analyze PRIVATE dkc2_core)
+    dkc2_enable_project_warnings(dkc2_analyze)
 
-add_executable(dkc2_boot app/boot_main.c)
-target_link_libraries(dkc2_boot PRIVATE dkc2_core)
-dkc2_enable_project_warnings(dkc2_boot)
+    add_executable(dkc2_boot app/boot_main.c)
+    target_link_libraries(dkc2_boot PRIVATE dkc2_core)
+    dkc2_enable_project_warnings(dkc2_boot)
+endif()
 
 if(WIN32 AND EXISTS
         "${CMAKE_CURRENT_SOURCE_DIR}/snesrecomp/tools/snesref/libretro.h")
@@ -143,26 +153,28 @@ if(DKC2_BUILD_SNESRECOMP)
     endif()
     include(${SNESRECOMP_ROOT}/runner/runner.cmake)
     include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/ProjectKongsPpu.cmake)
-    # SDL2 and recomp-ui are portable dependencies shared by the launcher and
-    # the gameplay host on Windows, Linux, and macOS. Prefer a package config
-    # (vcpkg/Homebrew commonly provide one), then accept a distribution module.
-    find_package(SDL2 CONFIG QUIET)
-    if(NOT TARGET SDL2::SDL2)
-        if(NOT DKC2_FETCH_SDL2)
-            message(FATAL_ERROR
-                "SDL2 was not found. Install SDL2 or configure with DKC2_FETCH_SDL2=ON")
+    if(NOT DKC2_BUILD_SNESRECOMP_SWITCH)
+        # SDL2 and recomp-ui are portable dependencies shared by the launcher
+        # and the desktop gameplay host. Prefer a package config, then accept
+        # the pinned source fallback.
+        find_package(SDL2 CONFIG QUIET)
+        if(NOT TARGET SDL2::SDL2)
+            if(NOT DKC2_FETCH_SDL2)
+                message(FATAL_ERROR
+                    "SDL2 was not found. Install SDL2 or configure with DKC2_FETCH_SDL2=ON")
+            endif()
+            include(FetchContent)
+            set(SDL2_DISABLE_INSTALL ON CACHE BOOL "" FORCE)
+            set(SDL_TEST OFF CACHE BOOL "" FORCE)
+            FetchContent_Declare(SDL2
+                GIT_REPOSITORY https://github.com/libsdl-org/SDL.git
+                GIT_TAG release-2.30.9
+                GIT_SHALLOW TRUE)
+            FetchContent_MakeAvailable(SDL2)
         endif()
-        include(FetchContent)
-        set(SDL2_DISABLE_INSTALL ON CACHE BOOL "" FORCE)
-        set(SDL_TEST OFF CACHE BOOL "" FORCE)
-        FetchContent_Declare(SDL2
-            GIT_REPOSITORY https://github.com/libsdl-org/SDL.git
-            GIT_TAG release-2.30.9
-            GIT_SHALLOW TRUE)
-        FetchContent_MakeAvailable(SDL2)
+        set(SNESRECOMP_SDL_BACKEND SDL2)
+        include(${CMAKE_CURRENT_SOURCE_DIR}/recomp-ui/recomp_ui.cmake)
     endif()
-    set(SNESRECOMP_SDL_BACKEND SDL2)
-    include(${CMAKE_CURRENT_SOURCE_DIR}/recomp-ui/recomp_ui.cmake)
     file(GLOB DKC2_SNESRECOMP_GEN_SOURCES CONFIGURE_DEPENDS
         "${DKC2_SNESRECOMP_GEN_DIR}/*.c")
     if(NOT DKC2_SNESRECOMP_GEN_SOURCES)
@@ -201,7 +213,8 @@ if(DKC2_BUILD_SNESRECOMP)
     list(REMOVE_ITEM SNESRECOMP_RUNNER_SOURCES
         "${SNESRECOMP_ROOT}/runner/src/keybinds.c"
         "${SNESRECOMP_ROOT}/runner/src/host_report.c")
-    add_executable(dkc2_snesrecomp_headless
+    if(NOT DKC2_BUILD_SNESRECOMP_SWITCH)
+        add_executable(dkc2_snesrecomp_headless
         ${SNESRECOMP_RUNNER_SOURCES}
         ${DKC2_SNESRECOMP_GEN_SOURCES}
         runner/dkc2_game.c
@@ -212,19 +225,19 @@ if(DKC2_BUILD_SNESRECOMP)
         runner/input_playback.c
         runner/verified_rom.c
         runner/headless_main.c)
-    target_include_directories(dkc2_snesrecomp_headless PRIVATE
+        target_include_directories(dkc2_snesrecomp_headless PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/runner
         ${CMAKE_CURRENT_SOURCE_DIR}/recomp
         ${SNESRECOMP_RUNNER_INCLUDE_DIRS})
-    target_compile_definitions(dkc2_snesrecomp_headless PRIVATE
+        target_compile_definitions(dkc2_snesrecomp_headless PRIVATE
         SNESRECOMP_TRACE=$<BOOL:${SNESRECOMP_ENABLE_TRACE}>
         SNESRECOMP_REVERSE_DEBUG=0
         SNESRECOMP_EXTERNAL_RAM_ROUTINE_GUARDS=1
         SYSTEM_VOLUME_MIXER_AVAILABLE=0)
-    target_link_libraries(dkc2_snesrecomp_headless PRIVATE
+        target_link_libraries(dkc2_snesrecomp_headless PRIVATE
         ${SNESRECOMP_RUNNER_LIBRARIES})
-    dkc2_enable_project_warnings(dkc2_snesrecomp_headless)
-    dkc2_enable_release_optimization(dkc2_snesrecomp_headless)
+        dkc2_enable_project_warnings(dkc2_snesrecomp_headless)
+        dkc2_enable_release_optimization(dkc2_snesrecomp_headless)
 
     if(WIN32)
         set(DKC2_DESKTOP_ICON_RESOURCE "")
@@ -314,9 +327,10 @@ if(DKC2_BUILD_SNESRECOMP)
         dkc2_enable_release_optimization(dkc2_snesrecomp_desktop)
     endif()
 
-    # Cross-platform playable host. The established Win32 executable remains
-    # available while this SDL2 host is validated on each native platform.
-    add_executable(dkc2_snesrecomp_sdl
+    if(NOT DKC2_BUILD_SNESRECOMP_SWITCH)
+        # Cross-platform playable host. The established Win32 executable remains
+        # available while this SDL2 host is validated on each native platform.
+        add_executable(dkc2_snesrecomp_sdl
         ${SNESRECOMP_RUNNER_SOURCES}
         ${DKC2_SNESRECOMP_GEN_SOURCES}
         runner/dkc2_game.c
@@ -405,8 +419,151 @@ if(DKC2_BUILD_SNESRECOMP)
     recomp_target_launcher_ui(dkc2_snesrecomp_sdl
         CONSOLE snes
         BOXART ${CMAKE_SOURCE_DIR}/recomp/launcher/boxart.tga)
-    dkc2_enable_project_warnings(dkc2_snesrecomp_sdl)
-    dkc2_enable_release_optimization(dkc2_snesrecomp_sdl)
+        dkc2_enable_project_warnings(dkc2_snesrecomp_sdl)
+        dkc2_enable_release_optimization(dkc2_snesrecomp_sdl)
+    endif()
+    endif()
+
+    if(DKC2_BUILD_SNESRECOMP_SWITCH)
+        if(NOT CMAKE_SYSTEM_NAME STREQUAL "NintendoSwitch")
+            message(FATAL_ERROR
+                "DKC2_BUILD_SNESRECOMP_SWITCH requires the switch-devkitA64 toolchain")
+        endif()
+        if(NOT DEFINED DEVKITPRO)
+            message(FATAL_ERROR "DEVKITPRO is required for the Switch host")
+        endif()
+
+        set(DKC2_SWITCH_RUNNER_SOURCES ${SNESRECOMP_RUNNER_SOURCES})
+        list(REMOVE_ITEM DKC2_SWITCH_RUNNER_SOURCES
+            "${SNESRECOMP_ROOT}/runner/src/host_paths.c"
+            "${SNESRECOMP_ROOT}/runner/src/launcher.c"
+            "${SNESRECOMP_ROOT}/runner/src/launcher_cache.c"
+            "${SNESRECOMP_ROOT}/runner/src/launcher_picker.c")
+        list(REMOVE_ITEM DKC2_SWITCH_RUNNER_SOURCES
+            "${CMAKE_CURRENT_SOURCE_DIR}/runner/dkc2_music.c"
+            "${CMAKE_CURRENT_SOURCE_DIR}/runner/dkc2_msu1.c"
+            "${CMAKE_CURRENT_SOURCE_DIR}/runner/dkc2_spc_music.c")
+
+        # The generated game has thousands of translation units. Linking them
+        # directly exceeds the Windows/MSYS2 command-line limit, so archive
+        # each ROM bank separately and resolve cross-bank calls as a group.
+        set(DKC2_SWITCH_GENERATED_LIBRARIES)
+        set(_dkc2_switch_generated_groups)
+        foreach(_dkc2_source IN LISTS DKC2_SNESRECOMP_GEN_SOURCES)
+            get_filename_component(_dkc2_name "${_dkc2_source}" NAME)
+            string(REGEX MATCH "^(bank[0-9A-Fa-f]+)" _dkc2_group
+                "${_dkc2_name}")
+            if(NOT _dkc2_group)
+                set(_dkc2_group core)
+            endif()
+            list(APPEND _dkc2_switch_generated_groups "${_dkc2_group}")
+            list(APPEND DKC2_SWITCH_GENERATED_${_dkc2_group}
+                "${_dkc2_source}")
+        endforeach()
+        list(REMOVE_DUPLICATES _dkc2_switch_generated_groups)
+        foreach(_dkc2_group IN LISTS _dkc2_switch_generated_groups)
+            set(_dkc2_group_sources
+                ${DKC2_SWITCH_GENERATED_${_dkc2_group}})
+            list(LENGTH _dkc2_group_sources _dkc2_source_count)
+            math(EXPR _dkc2_last_source "${_dkc2_source_count} - 1")
+            set(_dkc2_chunk_index 0)
+            foreach(_dkc2_start RANGE 0 ${_dkc2_last_source} 64)
+                math(EXPR _dkc2_remaining
+                    "${_dkc2_source_count} - ${_dkc2_start}")
+                if(_dkc2_remaining GREATER 64)
+                    set(_dkc2_chunk_count 64)
+                else()
+                    set(_dkc2_chunk_count ${_dkc2_remaining})
+                endif()
+                list(SUBLIST _dkc2_group_sources ${_dkc2_start}
+                    ${_dkc2_chunk_count} _dkc2_chunk_sources)
+                set(_dkc2_library
+                    "dkc2_snesrecomp_generated_${_dkc2_group}_${_dkc2_chunk_index}")
+                add_library(${_dkc2_library} STATIC ${_dkc2_chunk_sources})
+                target_include_directories(${_dkc2_library} PRIVATE
+                    ${CMAKE_CURRENT_SOURCE_DIR}/runner
+                    ${CMAKE_CURRENT_SOURCE_DIR}/recomp
+                    ${SNESRECOMP_RUNNER_INCLUDE_DIRS})
+                target_compile_definitions(${_dkc2_library} PRIVATE
+                    DKC2_SWITCH=1
+                    SNESRECOMP_TRACE=0
+                    SNESRECOMP_REVERSE_DEBUG=0
+                    SNESRECOMP_EXTERNAL_RAM_ROUTINE_GUARDS=1
+                    SYSTEM_VOLUME_MIXER_AVAILABLE=0)
+                dkc2_enable_release_optimization(${_dkc2_library})
+                list(APPEND DKC2_SWITCH_GENERATED_LIBRARIES ${_dkc2_library})
+                math(EXPR _dkc2_chunk_index "${_dkc2_chunk_index} + 1")
+            endforeach()
+        endforeach()
+        add_executable(dkc2_snesrecomp_switch
+            ${DKC2_SWITCH_RUNNER_SOURCES}
+            runner/dkc2_game.c
+            runner/dkc2_coop.c
+            runner/dkc2_video.c
+            runner/dkc2_hdma.c
+            runner/dkc2_kongs.c
+            runner/switch_music.c
+            runner/verified_rom.c
+            runner/switch_compat.c
+            runner/switch_host.c
+            runner/switch_main.c)
+        target_include_directories(dkc2_snesrecomp_switch PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/runner
+            ${CMAKE_CURRENT_SOURCE_DIR}/recomp
+            ${SNESRECOMP_RUNNER_INCLUDE_DIRS}
+            "${DEVKITPRO}/libnx/include"
+            "${DEVKITPRO}/portlibs/switch/include/SDL2")
+        target_compile_definitions(dkc2_snesrecomp_switch PRIVATE
+            DKC2_SWITCH=1
+            SNESRECOMP_TRACE=0
+            SNESRECOMP_REVERSE_DEBUG=0
+            SNESRECOMP_EXTERNAL_RAM_ROUTINE_GUARDS=1
+            SYSTEM_VOLUME_MIXER_AVAILABLE=0
+            SDL_MAIN_HANDLED)
+        target_compile_options(dkc2_snesrecomp_switch PRIVATE
+            -include switch_compat.h)
+        target_link_directories(dkc2_snesrecomp_switch PRIVATE
+            "${DEVKITPRO}/portlibs/switch/lib"
+            "${DEVKITPRO}/libnx/lib")
+        target_link_libraries(dkc2_snesrecomp_switch PRIVATE
+            ${SNESRECOMP_RUNNER_LIBRARIES}
+            "-Wl,--start-group"
+            ${DKC2_SWITCH_GENERATED_LIBRARIES}
+            "-Wl,--end-group"
+            SDL2
+            EGL
+            stdc++
+            drm_nouveau
+            glapi
+            nx
+            m)
+        set_target_properties(dkc2_snesrecomp_switch PROPERTIES
+            OUTPUT_NAME DKC2RecompSwitch)
+        dkc2_enable_project_warnings(dkc2_snesrecomp_switch)
+        dkc2_enable_release_optimization(dkc2_snesrecomp_switch)
+
+        find_program(DKC2_SWITCH_NACPTOOL nacptool
+            HINTS "${DEVKITPRO}/tools/bin" REQUIRED)
+        find_program(DKC2_SWITCH_ELF2NRO elf2nro
+            HINTS "${DEVKITPRO}/tools/bin" REQUIRED)
+        set(DKC2_SWITCH_NACP
+            "${CMAKE_CURRENT_BINARY_DIR}/DKC2RecompSwitch.nacp")
+        set(DKC2_SWITCH_NRO
+            "${CMAKE_CURRENT_BINARY_DIR}/DKC2RecompSwitch.nro")
+        add_custom_command(OUTPUT "${DKC2_SWITCH_NACP}"
+            COMMAND "${DKC2_SWITCH_NACPTOOL}" --create
+                "Donkey Kong Country 2: Recompiled" "1weell" "0.0.1"
+                "${DKC2_SWITCH_NACP}"
+            VERBATIM)
+        add_custom_command(OUTPUT "${DKC2_SWITCH_NRO}"
+            COMMAND "${DKC2_SWITCH_ELF2NRO}"
+                "$<TARGET_FILE:dkc2_snesrecomp_switch>"
+                "${DKC2_SWITCH_NRO}" "--nacp=${DKC2_SWITCH_NACP}"
+            DEPENDS dkc2_snesrecomp_switch "${DKC2_SWITCH_NACP}"
+            VERBATIM)
+        add_custom_target(DKC2RecompSwitchNro ALL
+            DEPENDS "${DKC2_SWITCH_NRO}")
+    endif()
 
     if(BUILD_TESTING AND APPLE AND DKC2_ROM)
         add_test(NAME supplied_rom_macos_app_smoke
