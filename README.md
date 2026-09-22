@@ -4,6 +4,13 @@ Nintendo Switch port of [DKC2Recomp](https://github.com/elliotttate/DKC2Recomp),
 
 This repository contains the Switch host, build configuration, and documentation required to run the game on Nintendo Switch.
 
+## Switch port roadmap
+
+Our Switch-specific implementation plan, priorities, acceptance criteria and
+hardware validation matrix are maintained in [SWITCH_ROADMAP.md](SWITCH_ROADMAP.md)
+(Portuguese). It is separate from the upstream recomp roadmap in
+`docs/ROADMAP.md`.
+
 ## Current status
 
 The build has been tested on real hardware and provides:
@@ -145,3 +152,17 @@ Generated files, local builds, ROMs, and logs are ignored by Git and are not par
 The original *Donkey Kong Country 2: Diddy's Kong Quest* content belongs to its respective rights holders. The ROM must be provided by the user and is not distributed with this project.
 
 See the license files included with each submodule and dependency for the applicable terms.
+
+## Switch host controls and settings (implementation checkpoint)
+
+Press **ZL+ZR** for the host menu; use D-pad, A and B. It offers resume,
+4:3/16:9 (next app launch), volume, sharp/smooth scaling, an alternative menu
+shortcut, confirmed reset, and save/exit. P1 owns handheld; P2 uses controller
+No2. Left stick directions are enabled. Original Start/Select remain mapped.
+
+Settings and checked SRAM backups live in `.runtime`. Changed SRAM is saved
+at a provisional 30-second interval and at menu/focus/exit boundaries. This
+preserves in-game save progress; it is not a save-state feature. Logs use
+`.runtime/boot.log` plus one previous boot. These additions are implemented
+and locally tested; console audio, suspension, menu and visual acceptance are
+still pending. See [the checkpoint](docs/SWITCH_IMPLEMENTATION_2026-09-22.md).

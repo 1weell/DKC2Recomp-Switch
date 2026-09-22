@@ -1,5 +1,13 @@
 # DKC2Recomp Switch port status
 
+## Switch-specific improvement plan
+
+See [SWITCH_ROADMAP.md](SWITCH_ROADMAP.md) for our port's detailed backlog,
+dependencies and acceptance criteria. Created on 2026-09-22, it is a planning
+document; its pending items do not represent newly implemented or hardware-tested
+features. The historical checkpoint below must be reconciled against the exact
+tested NRO as part of SW-00.
+
 ## Current checkpoint
 
 - Repository cloned with the upstream `snesrecomp` and `recomp-ui` submodules.
@@ -55,3 +63,13 @@ reference capture for diagnosis.
 3. Verify the SDL2/libnx audio queue and APU output on hardware.
 4. Run the documented widescreen diagnostics on hardware captures and check
    the known intro/margin transitions before treating 16:9 as stable.
+
+## Checkpoint 2026-09-22 — roadmap implementation
+
+The host now includes checked SRAM/backup recovery and change-based autosave,
+a recursive APU mutex, fixed/rotated logs, boot diagnostics, focus/resume hooks,
+frame-phase/audio occupancy metrics, a controller menu, persistent settings,
+4:3 presentation, analog directions and exclusive handheld ownership for P1.
+All 50 public tests passed in the clean MSYS build. Hardware acceptance remains
+pending, including the intro glitch, menu, saves, audio and suspension.
+See [the evidence and limitations](docs/SWITCH_IMPLEMENTATION_2026-09-22.md).

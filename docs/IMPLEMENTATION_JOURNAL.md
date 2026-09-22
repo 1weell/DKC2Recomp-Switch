@@ -6371,3 +6371,12 @@ in the release notes. The feature baseline is the complete 86-test pass above.
 GitHub inspection found no newer Mac artifact than v0.0.6; the release carries
 that original archive and checksum, with its older feature coverage explicitly
 labelled. Source-only changes are committed; release archives stay outside Git.
+
+## 2026-09-22 — Switch reliability and daily-use host
+
+Implemented the first local SWITCH_ROADMAP checkpoint: libnx APU locking,
+checked Switch-only SRAM storage, diagnostics, lifecycle hooks, timing/audio
+metrics, settings/menu and input policies. All 50 public tests passed in a
+fresh MSYS build, with synthetic storage fault injection. Shared runtime ABI,
+generated C and submodule revisions were not edited. No new hardware result
+is claimed. See SWITCH_IMPLEMENTATION_2026-09-22.md for detailed evidence.

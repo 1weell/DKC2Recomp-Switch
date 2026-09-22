@@ -987,3 +987,14 @@ widescreen path as experimental.
 - Verified CRT, Composite and Trinitron color presets compose with all scaling
   options; defaults reset also restores reconstruction, edge and feedback values.
 - Windows SDL private load-state presentation checks now load the supplied state.
+
+## Unreleased — Switch host checkpoint (2026-09-22)
+
+- Fixed runtime log location/fatal state and added build/SDL diagnostics.
+- Added recursive APU locking and audio-ring occupancy observations.
+- Added checked SRAM temporary writes, backup recovery and changed-only autosave.
+- Added focus/resume policies, deadline resync and frame-phase statistics.
+- Added a paused controller menu, versioned settings, 4:3 output, volume and scaling.
+- Fixed handheld ownership for P1 and added analog direction/dead-zone policies.
+- Added public storage fault tests and a candidate artifact/manifest checker.
+- Hardware validation is pending; see docs/SWITCH_IMPLEMENTATION_2026-09-22.md.

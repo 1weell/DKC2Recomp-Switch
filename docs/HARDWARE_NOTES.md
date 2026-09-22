@@ -1333,3 +1333,12 @@ uses carrier state $13 during pickup, then $17/$18 while carrying. Drop uses
 reaction $06; a missed throw enters $1F flight then $21 waiting. Grounded
 $21 resumes independent control in simultaneous TEAM without changing the
 airborne trajectory or reintroducing the follower history teleport.
+
+## Switch checkpoint, 2026-09-22
+
+No new Nintendo Switch hardware test was performed. The implementation adds
+APU locking, checked SRAM, lifecycle notifications, timing metrics and a host
+menu. The first historical NRO boot report cannot validate these changes.
+Use the NRO hash and matrix in SWITCH_IMPLEMENTATION_2026-09-22.md when testing.
+Empty-ring callback counts are diagnostic observations, not complete underrun
+or overflow counts. Rename/flush/readback do not establish power-loss safety.

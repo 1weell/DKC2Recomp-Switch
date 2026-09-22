@@ -77,7 +77,10 @@ sdmc:/switch/DKC2Recomp/
   DKC2-USA-v1.0.sfc
   .runtime/
     save.srm
+    save.srm.bak
+    settings.bin
     boot.log
+    boot.previous.log
 ```
 
 The NRO also accepts a ROM path argument during development, but the default
@@ -96,3 +99,32 @@ path is the one shown above.
 A successful ELF/NRO link is not proof of Switch runtime compatibility. Each
 graphics, input and audio change must be tested on hardware with the prior NRO
 preserved for rollback.
+
+## Candidate verification and host tests
+
+The menu additionally links SDL2_test from the installed switch-sdl2 package.
+After a successful cross-build, record the exact candidate:
+
+```sh
+python3 scripts/check_switch_build.py --build build-switch
+python3 tests/test_check_switch_build.py
+python3 tests/test_switch_reporter.py
+```
+
+Keep `build-switch/switch-build-manifest.json` with the tested NRO and preserve
+an older NRO separately. The manifest includes dirty state and source hashes;
+run it after rebuilding every source change. It validates ELF/NRO headers,
+NACP size and NRO bounds; it does not execute the game.
+
+Public host policies/storage are tested in a separate native directory. For
+the installed MSYS GCC environment used in this checkpoint:
+
+```sh
+cmake -S . -B build-roadmap-tests -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_FLAGS=-D_GNU_SOURCE
+cmake --build build-roadmap-tests --parallel 16
+ctest --test-dir build-roadmap-tests --output-on-failure
+```
+
+`-D_GNU_SOURCE` exposes the existing POSIX launcher APIs on MSYS; do not add it
+to the Switch toolchain. Private ROM regressions require their own configured
+fixtures. See docs/SWITCH_IMPLEMENTATION_2026-09-22.md for the hardware matrix.

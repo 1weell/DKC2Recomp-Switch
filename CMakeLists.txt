@@ -506,7 +506,18 @@ if(DKC2_BUILD_SNESRECOMP)
             runner/verified_rom.c
             runner/switch_compat.c
             runner/switch_host.c
+            runner/switch_sram.c
             runner/switch_main.c)
+        execute_process(COMMAND git rev-parse --short=12 HEAD
+            WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+            OUTPUT_VARIABLE DKC2_SWITCH_REVISION OUTPUT_STRIP_TRAILING_WHITESPACE
+            ERROR_QUIET)
+        if(NOT DKC2_SWITCH_REVISION)
+            set(DKC2_SWITCH_REVISION "unknown")
+        endif()
+        target_compile_definitions(dkc2_snesrecomp_switch PRIVATE
+            DKC2_SWITCH_BUILD="${PROJECT_VERSION}-${DKC2_SWITCH_REVISION}"
+            DKC2_SWITCH_COMPILER="${CMAKE_C_COMPILER_ID}-${CMAKE_C_COMPILER_VERSION}")
         target_include_directories(dkc2_snesrecomp_switch PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR}/runner
             ${CMAKE_CURRENT_SOURCE_DIR}/recomp
@@ -530,6 +541,7 @@ if(DKC2_BUILD_SNESRECOMP)
             "-Wl,--start-group"
             ${DKC2_SWITCH_GENERATED_LIBRARIES}
             "-Wl,--end-group"
+            SDL2_test
             SDL2
             EGL
             stdc++
@@ -1459,4 +1471,12 @@ if(BUILD_TESTING)
             PASS_REGULAR_EXPRESSION
                 "Frame SHA-256: ce5c1873327e39ba4d77c33e101ce9956ee86554c889855b8e3531b330923c2f")
     endif()
+endif()
+
+if(BUILD_TESTING AND NOT DKC2_BUILD_SNESRECOMP_SWITCH)
+    add_executable(test_switch_host tests/test_switch_host.c runner/switch_sram.c)
+    target_include_directories(test_switch_host PRIVATE runner)
+    target_compile_definitions(test_switch_host PRIVATE SWITCH_SRAM_TEST_IO)
+    dkc2_enable_project_warnings(test_switch_host)
+    add_test(NAME switch_host_policy_storage COMMAND test_switch_host "${CMAKE_CURRENT_BINARY_DIR}")
 endif()

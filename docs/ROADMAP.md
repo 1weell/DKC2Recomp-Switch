@@ -493,3 +493,11 @@ Exit criterion: reach and render the title screen with correct audio and input.
 - [x] Verify drop/throw and both players walking/jumping afterward.
 - [x] Verify Diddy/Dixie and imported Donkey/Kiddy with real input replays.
 - [ ] Full-game team-throw terrain/enemy and unusual animal-transition coverage.
+
+## Switch-specific checkpoint (2026-09-22)
+
+The separate ../SWITCH_ROADMAP.md tracks host implementation and console
+acceptance. Diagnostics, APU mutex, checked SRAM, lifecycle/pacing policies,
+settings/menu and basic input updates now have local implementation evidence.
+See SWITCH_IMPLEMENTATION_2026-09-22.md. No shared or hardware milestone is
+closed by this checkpoint; console testing and the visual corpus remain open.

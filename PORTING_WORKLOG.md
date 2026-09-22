@@ -159,3 +159,17 @@ sdmc:/switch/DKC2Recomp/DKC2-USA-v1.0.sfc
 3. Integrar a saída de áudio do Switch.
 4. Validar saves, resolução, input dos dois jogadores e estabilidade de longo
    prazo.
+
+## 22/09/2026 — primeiro lote do SWITCH_ROADMAP
+
+Implementados diagnóstico, sincronização APU, SRAM temporária verificada com
+backup, autosave por alteração, hooks de foco, ressincronização do relógio,
+métricas de fases e ring, menu ZL+ZR, configuração persistente, 4:3/16:9,
+volume/escala, analógico e ownership de P1/P2. O runtime compartilhado e os
+submódulos não foram modificados. O texto do menu usa SDL2_test já instalado.
+
+A suíte anterior tinha 32 executáveis/caminhos indisponíveis. A build limpa
+MSYS (com -D_GNU_SOURCE para APIs POSIX do launcher existente) passou 50/50,
+incluindo falhas simuladas de SRAM. O verificador de artefatos tem teste Python
+separado. Não houve teste novo no console nem uso de SRAM real do jogador.
+Detalhes, baseline e limites em docs/SWITCH_IMPLEMENTATION_2026-09-22.md.

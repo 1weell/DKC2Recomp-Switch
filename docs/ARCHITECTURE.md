@@ -1816,3 +1816,15 @@ Held-Kong ownership resolves from those guest selectors after save/load too.
 The state policy preserves the carrier's pickup wait and restores independent
 control and collision flags when a thrown partner has landed. Classic, solo
 and contest retain the original eligibility and state paths.
+
+## Switch host policies (2026-09-22)
+
+The Switch host owns a static recursive libnx APU mutex and stops the SDL
+callback before reset/settings mutation/shutdown. Storage uses switch_sram.c
+rather than changing the common runtime save ABI: exact-size read/backup,
+verified temporary write and checked promotion. Dirty tracking stays on the
+main thread. switch_policy.h and switch_settings.h expose portable synthetic
+test surfaces. Menu rendering uses SDL2_test's installed font helper through
+the existing renderer. Aspect changes apply before runtime initialization on
+the next launch; active texture dimensions never change mid-frame. See
+SWITCH_IMPLEMENTATION_2026-09-22.md for lock ordering and lifecycle limitations.
