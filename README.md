@@ -1,60 +1,60 @@
 # DKC2Recomp — Nintendo Switch port
 
-Port para Nintendo Switch do [DKC2Recomp](https://github.com/elliotttate/DKC2Recomp), baseado no recompilador estático e no runtime SNES do projeto original.
+Nintendo Switch port of [DKC2Recomp](https://github.com/elliotttate/DKC2Recomp), based on the original project's static recompiler and SNES runtime.
 
-O objetivo deste repositório é manter somente o host, a configuração de build e a documentação necessários para executar o jogo no Nintendo Switch.
+This repository contains the Switch host, build configuration, and documentation required to run the game on Nintendo Switch.
 
-## Estado atual
+## Current status
 
-A build foi testada em hardware real e apresenta:
+The build has been tested on real hardware and provides:
 
-- boot e execução do jogo;
-- controles do Switch funcionando;
-- mapeamento físico correto dos botões B/Y/A/X;
-- áudio SNES via SDL/libnx;
-- apresentação widescreen 16:9 em 1280×720;
-- SRAM persistente em `.runtime/`.
+- game boot and execution;
+- working Switch controls;
+- correct physical B/Y/A/X button mapping;
+- SNES audio through SDL/libnx;
+- 16:9 presentation at 1280×720;
+- persistent SRAM data under .runtime/.
 
-A rota widescreen continua sendo validada tela a tela. Pequenos artefatos de transição na introdução podem permanecer em determinadas cenas.
+The widescreen route is still being validated screen by screen. Small transition artifacts may remain in some intro scenes.
 
-## Requisitos
+## Requirements
 
-Para compilar, instale:
+Install the following to build the port:
 
 - [devkitPro](https://devkitpro.org/);
 - devkitA64;
 - libnx;
-- SDL2 para Switch;
-- CMake, Ninja, Python e Rust/Cargo;
-- MSYS2 do devkitPro;
-- uma ROM própria e legalmente obtida de *Donkey Kong Country 2: Diddy's Kong Quest*, versão North America v1.0.
+- SDL2 for Switch;
+- CMake, Ninja, Python, and Rust/Cargo;
+- devkitPro MSYS2;
+- your own legally obtained North American v1.0 ROM of *Donkey Kong Country 2: Diddy's Kong Quest*.
 
-O projeto espera:
+The project expects:
 
-```sh
+~~~
 export DEVKITPRO=/c/devkitPro
 export DEVKITA64=/c/devkitPro/devkitA64
-```
+~~~
 
-## ROM compatível
+## Supported ROM
 
-A ROM não é distribuída neste repositório. A geração verifica a revisão North America v1.0 pelo SHA-256:
+The ROM is not distributed in this repository. Generation verifies the North American v1.0 revision using this SHA-256:
 
-```text
+~~~
 35421a9af9dd011b40b91f792192af9f99c93201d8d394026bdfb42cbf2d8633
-```
+~~~
 
-Coloque a ROM na raiz do projeto ou informe o caminho diretamente ao gerador.
+Place the ROM in the project root or pass its path directly to the generator.
 
-## Compilação
+## Building
 
-Execute os comandos a partir do shell MSYS2 do devkitPro:
+Run these commands from the devkitPro MSYS2 shell:
 
-```sh
+~~~
 export DEVKITPRO=/c/devkitPro
 export DEVKITA64=/c/devkitPro/devkitA64
 
-python3 scripts/generate_snesrecomp.py --rom /c/caminho/para/DKC2-USA-v1.0.sfc
+python3 scripts/generate_snesrecomp.py --rom /c/path/to/DKC2-USA-v1.0.sfc
 
 cmake -S . -B build-switch -G Ninja \
   -DCMAKE_TOOLCHAIN_FILE=cmake/toolchains/switch-devkitA64.cmake \
@@ -62,40 +62,40 @@ cmake -S . -B build-switch -G Ninja \
   -DDKC2_BUILD_SNESRECOMP_SWITCH=ON
 
 cmake --build build-switch --parallel 16
-```
+~~~
 
-O artefato principal será gerado em:
+The main artifact is generated at:
 
-```text
+~~~
 build-switch/DKC2RecompSwitch.nro
-```
+~~~
 
-O build usa 16 tarefas paralelas conforme o ambiente de desenvolvimento deste port.
+The build uses 16 parallel jobs, matching the development environment used for this port.
 
-## Instalação no Switch
+## Installing on Switch
 
-Copie para o cartão SD:
+Copy the following files to the SD card:
 
-```text
+~~~
 /switch/DKC2Recomp/DKC2RecompSwitch.nro
 /switch/DKC2Recomp/DKC2-USA-v1.0.sfc
-```
+~~~
 
-Depois, abra o `.nro` pelo Homebrew Menu.
+Launch the .nro through the Homebrew Menu.
 
-O jogo cria e usa os dados persistentes em:
+The game creates and uses persistent data under:
 
-```text
+~~~
 /switch/DKC2Recomp/.runtime/
-```
+~~~
 
-Não publique a ROM nem os arquivos pessoais de save junto com o port.
+Do not publish the ROM or personal save files with the port.
 
-## Controles
+## Controls
 
-O mapeamento segue a posição física dos botões do controle do Switch:
+The mapping follows the physical position of the Switch controller buttons:
 
-| Controle Switch | Botão SNES |
+| Switch control | SNES button |
 | --- | --- |
 | B | B |
 | Y | Y |
@@ -104,44 +104,44 @@ O mapeamento segue a posição física dos botões do controle do Switch:
 | + | Start |
 | − | Select |
 | L / R | L / R |
-| D-pad | Direcional |
+| D-pad | D-pad |
 
-## Widescreen e vídeo
+## Widescreen and video
 
-O port ativa a rota widescreen já existente no projeto original. A renderização usa:
+The port enables the widescreen route already present in the original project. Rendering uses:
 
-- framebuffer lógico de 342×224;
-- expansão para 16:9 com as margens adicionais do jogo;
-- saída apresentada em 1280×720;
-- filtro de escala nearest-neighbor para preservar os pixels originais.
+- a 342×224 logical framebuffer;
+- 16:9 expansion with the game's additional side margins;
+- 1280×720 output presentation;
+- nearest-neighbor scaling to preserve the original pixel artwork.
 
-O diagnóstico e a validação das camadas BG1, BG2, BG3 e OBJ estão documentados em [`docs/WIDESCREEN_DIAGNOSTICS.md`](docs/WIDESCREEN_DIAGNOSTICS.md).
+Diagnostics and validation for BG1, BG2, BG3, and OBJ layers are documented in [docs/WIDESCREEN_DIAGNOSTICS.md](docs/WIDESCREEN_DIAGNOSTICS.md).
 
-## Áudio
+## Audio
 
-O áudio utiliza o callback DSP do runtime SNES e a saída SDL do Switch. A inicialização solicita áudio estéreo S16 em 32.040 Hz, taxa nativa usada pelo jogo.
+Audio uses the SNES runtime DSP callback and the Switch SDL output. Initialization requests stereo S16 audio at 32,040 Hz, the game's native rate.
 
-## Estrutura específica do port
+## Port-specific files
 
-- `runner/switch_main.c` — host principal, vídeo, entrada e ciclo do jogo;
-- `runner/switch_host.c` / `runner/switch_compat.c` — compatibilidade do host;
-- `runner/switch_music.c` — suporte de música do host;
-- `cmake/toolchains/switch-devkitA64.cmake` — toolchain do devkitA64;
-- `BUILDING_SWITCH.md` — fluxo detalhado de build e instalação;
-- `PORT_STATUS.md` — estado atual e pendências;
-- `PORTING_WORKLOG.md` — histórico técnico do port.
+- runner/switch_main.c — main host, video, input, and game loop;
+- runner/switch_host.c / runner/switch_compat.c — host compatibility;
+- runner/switch_music.c — host music support;
+- cmake/toolchains/switch-devkitA64.cmake — devkitA64 toolchain;
+- BUILDING_SWITCH.md — detailed build and installation workflow;
+- PORT_STATUS.md — current status and remaining work;
+- PORTING_WORKLOG.md — technical porting history.
 
-Arquivos gerados, builds locais, ROMs e logs são ignorados pelo Git e não fazem parte do repositório público.
+Generated files, local builds, ROMs, and logs are ignored by Git and are not part of the public repository.
 
-## Créditos e agradecimentos
+## Credits and acknowledgements
 
-- [Elliott Tate — DKC2Recomp](https://github.com/elliotttate/DKC2Recomp), projeto original e base deste port;
-- [snesrecomp](https://github.com/mstan/snesrecomp), recompilador estático e runtime SNES compartilhado;
-- [recomp-ui](https://github.com/mstan/recomp-ui), componentes compartilhados do projeto original;
-- [H4v0c21 — DKC2 disassembly](https://github.com/H4v0c21/DKC2-disassembly), referência de engenharia reversa e símbolos;
-- devkitPro, devkitA64, libnx e SDL2, ferramentas e bibliotecas usadas no port;
-- contribuidores da comunidade de recompilação e preservação de jogos.
+- [Elliott Tate — DKC2Recomp](https://github.com/elliotttate/DKC2Recomp), the original project and foundation for this port;
+- [snesrecomp](https://github.com/mstan/snesrecomp), the static recompiler and shared SNES runtime;
+- [recomp-ui](https://github.com/mstan/recomp-ui), shared components from the original project;
+- [H4v0c21 — DKC2 disassembly](https://github.com/H4v0c21/DKC2-disassembly), reverse-engineering and symbol reference;
+- devkitPro, devkitA64, libnx, and SDL2, the tools and libraries used by the port;
+- the game-recompilation and game-preservation communities.
 
-O conteúdo original de *Donkey Kong Country 2: Diddy's Kong Quest* pertence aos seus respectivos detentores de direitos. A ROM deve ser fornecida pelo usuário e não é distribuída neste projeto.
+The original *Donkey Kong Country 2: Diddy's Kong Quest* content belongs to its respective rights holders. The ROM must be provided by the user and is not distributed with this project.
 
-Consulte os arquivos de licença dos submódulos e dependências para os termos aplicáveis a cada componente.
+See the license files included with each submodule and dependency for the applicable terms.
